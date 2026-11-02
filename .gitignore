@@ -5,14 +5,14 @@ docs/
 .cursor/
 .agents/
 
-# 临时与备份
+# 临时与备份（仅排除根目录临时文件，保留 web/assets 等业务资源）
 tmp-*
 *.bak
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
+/tmp-*.png
+/tmp-*.jpg
+/tmp-*.jpeg
+/tmp-*.gif
+/tmp-*.webp
 
 # 系统与 IDE
 .DS_Store
