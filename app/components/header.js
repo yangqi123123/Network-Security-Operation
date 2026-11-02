@@ -59,7 +59,7 @@
     });
   }
 
-  applyTheme(localStorage.getItem("app-theme") || "dark");
+  applyTheme(localStorage.getItem("app-theme") || "light");
   applySidebar(isSidebarCollapsed());
 
   function mountHeader() {
@@ -68,7 +68,7 @@
 
     const title = document.body.dataset.pageTitle || "工作台";
     const section = document.body.dataset.pageSection || "网络安全运维管理平台";
-    const theme = document.documentElement.dataset.theme || "dark";
+    const theme = document.documentElement.dataset.theme || "light";
     const collapsed = isSidebarCollapsed();
     const isDark = theme === "dark";
     target.innerHTML = `
