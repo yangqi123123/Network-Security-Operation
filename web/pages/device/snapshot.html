@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备管理 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/device-mgmt.css">
+</head>
+<body class="dm-snapshot-page" data-menu-key="device.snapshot" data-page-section="设备管理" data-page-title="设备管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame">
+        <div class="dm-snap-shell">
+          <div class="dm-snap-toolbar">
+            <select class="form-control" id="deviceSelect" aria-label="选择设备"></select>
+            <button class="btn btn-secondary" type="button" id="btnRoot" title="返回资源根视图">根节点</button>
+            <button class="btn btn-secondary" type="button" id="btnUp" title="返回上一级">上一级</button>
+            <button class="btn btn-primary" type="button" id="btnDiscover"><i class="fa-solid fa-plus"></i> 添加/发现</button>
+            <input class="form-control dm-snap-search" id="compSearch" placeholder="搜索资源名称" type="search">
+            <button class="btn btn-secondary" type="button" id="btnRefresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+          </div>
+          <div class="dm-snap-crumb" id="snapCrumb"></div>
+          <div class="dm-snap-body">
+            <div class="dm-snap-canvas" id="snapCanvas"></div>
+            <aside class="dm-snap-aside" id="snapAside"></aside>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const DM = window.DeviceMgmt;
+    const select = document.getElementById("deviceSelect");
+    const btnUp = document.getElementById("btnUp");
+    let search = "";
+    let activeCompId = "";
+    /** 导航栈：空=设备根；有值则进入某资源分组 */
+    let navStack = [];
+    /** 会话内发现追加的组件，按 deviceId 存放 */
+    const discoveredExtra = {};
+
+    function qsDeviceId() {
+      return new URLSearchParams(location.search).get("id") || "";
+    }
+
+    function fillDevices() {
+      const devices = DM.listDevices();
+      select.innerHTML = devices.map((d) =>
+        `<option value="${d.id}">${d.name} (${d.ip})</option>`).join("");
+      const fromQuery = qsDeviceId();
+      const prefer = devices.find((d) => d.id === fromQuery)
+        || devices.find((d) => d.category === "server_linux")
+        || devices[0];
+      if (prefer) select.value = prefer.id;
+    }
+
+    function statusDot(status) {
+      if (status === "warning") return "warning";
+      if (status === "danger") return "danger";
+      return "";
+    }
+
+    function currentGroups(snap) {
+      const base = (snap.groups || []).map((g) => ({
+        group: g.group,
+        items: [...(g.items || [])],
+      }));
+      const extra = discoveredExtra[select.value] || [];
+      if (extra.length) {
+        let disc = base.find((g) => g.group === "发现资源");
+        if (!disc) {
+          disc = { group: "发现资源", items: [] };
+          base.push(disc);
+        }
+        disc.items = disc.items.concat(extra);
+      }
+      if (!navStack.length) return base;
+      const name = navStack[navStack.length - 1];
+      const hit = base.find((g) => g.group === name);
+      return hit ? [hit] : base;
+    }
+
+    function syncNavButtons() {
+      btnUp.disabled = !navStack.length;
+      btnUp.classList.toggle("is-disabled", !navStack.length);
+    }
+
+    function renderCrumb(deviceName) {
+      const parts = [`<button type="button" class="dm-crumb-link" data-crumb="-1">${deviceName || "设备"}</button>`];
+      navStack.forEach((name, idx) => {
+        parts.push(`<span class="dm-crumb-sep">/</span>`);
+        parts.push(`<button type="button" class="dm-crumb-link" data-crumb="${idx}">${name}</button>`);
+      });
+      if (!navStack.length) {
+        parts.push(`<span class="dm-crumb-sep">/</span><span class="dm-crumb-current">全部资源</span>`);
+      }
+      document.getElementById("snapCrumb").innerHTML = parts.join("");
+    }
+
+    function goRoot() {
+      navStack = [];
+      activeCompId = "";
+      search = "";
+      document.getElementById("compSearch").value = "";
+      render();
+    }
+
+    function goUp() {
+      if (!navStack.length) return;
+      navStack.pop();
+      activeCompId = "";
+      render();
+    }
+
+    function drillGroup(groupName) {
+      if (!groupName) return;
+      if (navStack[navStack.length - 1] === groupName) return;
+      navStack.push(groupName);
+      activeCompId = "";
+      render();
+    }
+
+    function render() {
+      const snap = DM.getDeviceSnapshot(select.value);
+      const canvas = document.getElementById("snapCanvas");
+      const aside = document.getElementById("snapAside");
+      syncNavButtons();
+      if (!snap) {
+        canvas.innerHTML = `<div class="dm-empty">未找到设备快照</div>`;
+        aside.innerHTML = "";
+        renderCrumb("-");
+        return;
+      }
+      renderCrumb(snap.device.name);
+      const q = search.trim().toLowerCase();
+      const groups = currentGroups(snap);
+      const html = groups.map((g) => {
+        const items = g.items.filter((it) => !q || it.name.toLowerCase().includes(q));
+        if (!items.length && q) return "";
+        const canDrill = !navStack.length;
+        return `<section class="dm-comp-group" data-group="${g.group}">
+          <h3 class="dm-comp-group-title${canDrill ? " is-drillable" : ""}" data-drill-group="${g.group}" title="${canDrill ? "点击进入该分组" : ""}">
+            ${g.group}（${items.length}）
+            ${canDrill ? '<i class="fa-solid fa-chevron-right dm-drill-ico"></i>' : ""}
+          </h3>
+          <div class="dm-comp-items">${items.map((it) => `
+            <div class="dm-comp-item${activeCompId === it.id ? " is-active" : ""}" data-comp="${it.id}">
+              <span class="dm-status-dot ${statusDot(it.status)}"></span>
+              <div class="dm-comp-icon"><i class="fa-solid fa-cube"></i></div>
+              <div class="dm-comp-name">${it.name}</div>
+            </div>`).join("") || `<div class="dm-empty" style="padding:12px">该分组暂无组件</div>`}</div>
+        </section>`;
+      }).join("");
+      canvas.innerHTML = html || `<div class="dm-empty">无匹配资源组件</div>`;
+
+      const d = snap.device;
+      const icon = DM.getIcon(d.iconId);
+      const hourly = (snap.hourlyLoad || []).slice(-12);
+      const warnMetric = (snap.metrics || []).find((m) => Number(m.value) >= 70);
+      aside.innerHTML = `
+        <div class="dm-snap-head">
+          <div class="dm-snap-head-icon"><i class="${icon?.asset || "fa-solid fa-server"}"></i></div>
+          <div>
+            <h2>${d.name} <span class="tag ${d.online ? "success" : "danger"}">${d.online ? "在线" : "离线"}</span></h2>
+            <p>${d.ip} · ${d.protocol || "-"}</p>
+          </div>
+        </div>
+        ${warnMetric ? `<div class="dm-snap-alert">性能提示：${warnMetric.name} 达 ${warnMetric.value}${warnMetric.unit || ""}，请关注近一小时负载与链路流量。</div>` : ""}
+        <div class="dm-snap-kv">
+          <div><span>MAC</span><strong>${d.mac || "-"}</strong></div>
+          <div><span>部门</span><strong>${d.dept || "-"}</strong></div>
+          <div><span>关联业务</span><strong>${d.business || "-"}</strong></div>
+        </div>
+        <h3 style="margin:0 0 8px;font-size:13px;font-weight:600">关键指标</h3>
+        ${(snap.metrics || []).map((m) => `
+          <details class="dm-metric-acc" open>
+            <summary><span>${m.name}</span><strong>${m.value}${m.unit || ""}</strong></summary>
+            <div class="dm-metric-body">近采样值 ${m.value}${m.unit || ""}，可用于性能问题与链路堵塞对照。</div>
+          </details>`).join("")}
+        <h3 style="margin:16px 0 8px;font-size:13px;font-weight:600">近一小时负载</h3>
+        <ul class="dm-hourly-list">${hourly.map((h) =>
+          `<li><span>${h.time}</span><strong>CPU ${h.cpu ?? "-"}% · 流量 ${h.traffic ?? "-"}</strong></li>`).join("")}</ul>
+        <a class="btn btn-secondary" style="width:100%;margin-top:14px;justify-content:center" href="../network/topology.html">在拓扑中查看</a>`;
+    }
+
+    function openDiscover() {
+      const device = DM.getDevice(select.value);
+      window.openAppDrawer({
+        title: "添加 / 发现资源",
+        body: `
+          <p class="panel-helper" style="margin-bottom:12px">对当前设备「${device?.name || "-"}」执行资源发现（Mock）。</p>
+          <div class="form-grid-2">
+            <label class="form-field form-item"><span class="form-label form-required">发现方式</span>
+              <select class="form-control" data-disc-field="mode">
+                <option value="snmp">SNMP</option>
+                <option value="agent">Agent</option>
+                <option value="wmi">WMI</option>
+              </select></label>
+            <label class="form-field form-item"><span class="form-label">目标地址</span>
+              <input class="form-control" data-disc-field="target" value="${device?.ip || ""}" placeholder="IP / 网段"></label>
+          </div>
+          <label class="form-field form-item"><span class="form-label">发现范围</span>
+            <select class="form-control" data-disc-field="scope">
+              <option value="comp">组件 / 指标</option>
+              <option value="process">进程</option>
+              <option value="port">端口 / 接口</option>
+            </select></label>
+          <div id="discProgress" class="hidden" style="margin-top:12px">
+            <div class="dm-disc-bar"><i id="discBar"></i></div>
+            <p class="panel-helper" id="discMsg">准备开始…</p>
+            <ul class="dm-disc-list" id="discList"></ul>
+          </div>`,
+        footer: `
+          <button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="btnStartDisc">开始发现</button>`,
+      });
+    }
+
+    function runDiscover() {
+      const mode = document.querySelector('[data-disc-field="mode"]')?.value || "snmp";
+      const scope = document.querySelector('[data-disc-field="scope"]')?.value || "comp";
+      const progress = document.getElementById("discProgress");
+      const bar = document.getElementById("discBar");
+      const msg = document.getElementById("discMsg");
+      const list = document.getElementById("discList");
+      const startBtn = document.getElementById("btnStartDisc");
+      if (!progress || !bar) return;
+      progress.classList.remove("hidden");
+      if (startBtn) startBtn.disabled = true;
+      list.innerHTML = "";
+      const found = [
+        { id: `disc-${Date.now()}-1`, name: scope === "port" ? "新接口 GE0/0/25" : scope === "process" ? "monitord" : "Filesystem /var", status: "normal" },
+        { id: `disc-${Date.now()}-2`, name: scope === "port" ? "新接口 GE0/0/26" : scope === "process" ? "collectd" : "Service snmpd", status: "warning" },
+      ];
+      let pct = 0;
+      const timer = setInterval(() => {
+        pct += 20;
+        bar.style.width = `${Math.min(pct, 100)}%`;
+        msg.textContent = pct < 100 ? `正在通过 ${mode.toUpperCase()} 扫描… ${pct}%` : "发现完成";
+        if (pct >= 100) {
+          clearInterval(timer);
+          list.innerHTML = found.map((f) => `<li><span class="tag ${f.status === "warning" ? "warning" : "success"}">新</span> ${f.name}</li>`).join("");
+          const footer = document.getElementById("drawerFooter");
+          if (footer) {
+            footer.innerHTML = `
+              <button class="btn btn-secondary" type="button" data-drawer-close>关闭</button>
+              <button class="btn btn-primary" type="button" id="btnApplyDisc">纳入当前快照</button>`;
+            document.getElementById("btnApplyDisc")?.addEventListener("click", () => {
+              const id = select.value;
+              if (!discoveredExtra[id]) discoveredExtra[id] = [];
+              discoveredExtra[id].push(...found);
+              document.querySelector("[data-drawer-close]")?.click();
+              goRoot();
+              window.openAppDrawer({
+                title: "提示",
+                body: `<p>已将 ${found.length} 项发现资源纳入「${DM.getDevice(id)?.name || id}」快照视图。</p>`,
+                footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+              });
+            }, { once: true });
+          }
+        }
+      }, 280);
+    }
+
+    fillDevices();
+    /* 防御：刷新/异常中断后残留的抽屉遮罩 */
+    window.closeAppDrawer?.();
+    render();
+    select.addEventListener("change", () => {
+      navStack = [];
+      activeCompId = "";
+      window.closeAppDrawer?.();
+      const url = new URL(location.href);
+      url.searchParams.set("id", select.value);
+      history.replaceState(null, "", url);
+      render();
+    });
+    document.getElementById("compSearch").addEventListener("input", (e) => { search = e.target.value; render(); });
+    document.getElementById("btnRefresh").addEventListener("click", () => {
+      window.closeAppDrawer?.();
+      render();
+    });
+    document.getElementById("btnRoot").addEventListener("click", goRoot);
+    document.getElementById("btnUp").addEventListener("click", goUp);
+    document.getElementById("btnDiscover").addEventListener("click", openDiscover);
+
+    document.getElementById("snapCanvas").addEventListener("click", (e) => {
+      const drill = e.target.closest("[data-drill-group]");
+      if (drill && !navStack.length) {
+        drillGroup(drill.dataset.drillGroup);
+        return;
+      }
+      const item = e.target.closest("[data-comp]");
+      if (!item) return;
+      activeCompId = item.dataset.comp;
+      render();
+    });
+
+    document.getElementById("snapCrumb").addEventListener("click", (e) => {
+      const link = e.target.closest("[data-crumb]");
+      if (!link) return;
+      const idx = Number(link.dataset.crumb);
+      if (idx < 0) goRoot();
+      else {
+        navStack = navStack.slice(0, idx + 1);
+        activeCompId = "";
+        render();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (e.target.closest("#btnStartDisc")) runDiscover();
+    });
+  </script>
+</body>
+</html>

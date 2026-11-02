@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安全态势感知大屏</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/secops-screen.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="viewport">
+    <div class="screen-shell">
+      <div class="content">
+        <div class="topbar">
+          <a class="back-link" href="../home/home.html"><i class="fa-solid fa-arrow-left"></i> 返回工作台</a>
+          <div class="title-plate"><h1>安全态势感知大屏</h1></div>
+          <div class="top-right">
+            <div class="view-tabs" id="viewTabs"></div>
+            <div class="clock"><strong id="clockTime">--:--:--</strong><span id="clockDate">----</span></div>
+          </div>
+        </div>
+
+        <div class="kpi-rail" id="kpiRail"></div>
+
+        <div class="layout">
+          <div class="col-left">
+            <section class="panel">
+              <div class="section-title">综合健康度</div>
+              <div class="panel-body health-rings">
+                <div class="ring-item"><div class="ring-chart" id="ringOnline"></div><div class="ring-label">资产在线率</div></div>
+                <div class="ring-item"><div class="ring-chart" id="ringHealthy"></div><div class="ring-label">资产健康率</div></div>
+                <div class="ring-item"><div class="ring-chart" id="ringPlatform"></div><div class="ring-label">平台健康</div></div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="section-title">24小时告警趋势</div>
+              <div class="panel-body"><div class="chart-box" id="chartTrend"></div></div>
+            </section>
+            <section class="panel">
+              <div class="section-title">事件等级统计</div>
+              <div class="panel-body"><div class="chart-box" id="chartLevel"></div></div>
+            </section>
+          </div>
+
+          <section class="col-center panel">
+            <div class="section-title">资产风险与攻击态势</div>
+            <div class="panel-body"><div class="topo" id="topo"></div></div>
+          </section>
+
+          <div class="col-right">
+            <section class="panel">
+              <div class="section-title">高危资产 TOP5</div>
+              <div class="panel-body"><div class="chart-box" id="chartTop"></div></div>
+            </section>
+            <section class="panel">
+              <div class="section-title">资产类型分布</div>
+              <div class="panel-body"><div class="chart-box" id="chartTypes"></div></div>
+            </section>
+            <section class="panel">
+              <div class="section-title">近7日告警分布</div>
+              <div class="panel-body"><div class="chart-box" id="chartHeat"></div></div>
+            </section>
+          </div>
+
+          <section class="bottom-panel panel">
+            <div class="section-title">实时事件处置动态</div>
+            <div class="panel-body" style="overflow:auto">
+              <table class="screen-table">
+                <thead>
+                  <tr>
+                    <th>网络名称</th><th>设备IP</th><th>资源名称</th><th>告警类型</th>
+                    <th>告警级别</th><th>告警值</th><th>发生时间</th><th>处置进度</th>
+                  </tr>
+                </thead>
+                <tbody id="eventBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../../app/data/secops-mock.js"></script>
+  <script>
+    const S = window.SecOps;
+    let currentView = "all";
+    const charts = {};
+
+    function initChart(id) {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      if (charts[id]) charts[id].dispose();
+      charts[id] = echarts.init(el);
+      return charts[id];
+    }
+
+    function gaugeOption(value, color) {
+      return {
+        series: [{
+          type: "gauge",
+          startAngle: 210,
+          endAngle: -30,
+          min: 0,
+          max: 100,
+          radius: "95%",
+          pointer: { show: false },
+          progress: { show: true, width: 10, itemStyle: { color } },
+          axisLine: { lineStyle: { width: 10, color: [[1, "rgba(55,120,175,.18)"]] } },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          detail: { valueAnimation: true, fontSize: 18, color: "#e7f4ff", offsetCenter: [0, "10%"], formatter: "{value}%" },
+          data: [{ value }],
+        }],
+      };
+    }
+
+    const NODE_POS = {
+      inet: [18, 22], att: [8, 50], fw: [32, 50], dmz: [48, 28],
+      core: [52, 55], biz: [72, 55], vic1: [68, 28], vic2: [88, 55],
+    };
+
+    function renderTopo(topology) {
+      const box = document.getElementById("topo");
+      const nodes = topology.nodes || [];
+      const links = topology.links || [];
+      const w = box.clientWidth || 600;
+      const h = box.clientHeight || 360;
+      const pos = {};
+      nodes.forEach((n, i) => {
+        const p = NODE_POS[n.id] || [15 + (i % 4) * 22, 20 + Math.floor(i / 4) * 28];
+        pos[n.id] = { x: (p[0] / 100) * w, y: (p[1] / 100) * h };
+      });
+      const lines = links.map((l) => {
+        const a = pos[l.source];
+        const b = pos[l.target];
+        if (!a || !b) return "";
+        return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="rgba(21,187,255,.74)" stroke-width="2" stroke-dasharray="7 8"/>`;
+      }).join("");
+      const nodeHtml = nodes.map((n) => {
+        const p = pos[n.id];
+        return `<div class="topo-node ${n.kind || ""}" style="left:${p.x}px;top:${p.y}px">${n.label}${n.risk ? `<div style="color:#f2c75c;font-size:10px;margin-top:4px">风险 ${n.risk}</div>` : ""}</div>`;
+      }).join("");
+      box.innerHTML = `<svg>${lines}</svg>${nodeHtml}`;
+    }
+
+    function renderAll(viewKey) {
+      currentView = viewKey || currentView;
+      const data = S.getScreenView(currentView);
+      document.querySelectorAll("#viewTabs button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.view === currentView);
+      });
+
+      const k = data.kpis;
+      document.getElementById("kpiRail").innerHTML = [
+        ["资产总量", k.assetTotal, ""],
+        ["在线率", k.onlineRate, "%"],
+        ["高危资产", k.highRisk, ""],
+        ["漏洞风险", k.vulnRisk, ""],
+        ["敏感数据", k.sensitiveDist, ""],
+        ["合规评分", k.complianceScore, "分"],
+      ].map(([label, val, unit]) => `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${val}<span class="kpi-unit">${unit}</span></div></div>`).join("");
+
+      initChart("ringOnline")?.setOption(gaugeOption(data.health.online, "#37e7ff"));
+      initChart("ringHealthy")?.setOption(gaugeOption(data.health.healthy, "#32e5ba"));
+      initChart("ringPlatform")?.setOption(gaugeOption(data.health.platform, "#2e92ff"));
+
+      initChart("chartTrend")?.setOption({
+        grid: { left: 36, right: 12, top: 24, bottom: 28 },
+        tooltip: { trigger: "axis" },
+        xAxis: { type: "category", data: data.trend24h.hours, axisLabel: { color: "#7e9dbd" }, axisLine: { lineStyle: { color: "rgba(70,151,222,.28)" } } },
+        yAxis: { type: "value", splitLine: { lineStyle: { color: "rgba(70,151,222,.12)" } }, axisLabel: { color: "#7e9dbd" } },
+        series: [{ type: "line", smooth: true, data: data.trend24h.counts, areaStyle: { color: "rgba(55,231,255,.12)" }, lineStyle: { color: "#37e7ff", width: 2 }, itemStyle: { color: "#37e7ff" } }],
+      });
+
+      initChart("chartLevel")?.setOption({
+        tooltip: { trigger: "item" },
+        legend: { orient: "vertical", right: 8, top: "middle", textStyle: { color: "#9dc9e9", fontSize: 11 } },
+        series: [{
+          type: "pie",
+          radius: ["42%", "68%"],
+          center: ["35%", "50%"],
+          label: { show: false },
+          data: data.levels.map((x) => ({ name: x.name, value: x.value, itemStyle: { color: x.color } })),
+        }],
+      });
+
+      initChart("chartTop")?.setOption({
+        grid: { left: 90, right: 36, top: 10, bottom: 10 },
+        xAxis: { type: "value", show: false },
+        yAxis: { type: "category", data: data.topRisk.map((x) => x.name).reverse(), axisLabel: { color: "#9dc9e9", fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+        series: [{
+          type: "bar",
+          data: data.topRisk.map((x) => x.count).reverse(),
+          barWidth: 10,
+          itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: "#167dd2" }, { offset: 1, color: "#37e7ff" }]) },
+          label: { show: true, position: "right", color: "#cceafa", fontSize: 11 },
+        }],
+      });
+
+      initChart("chartTypes")?.setOption({
+        tooltip: { trigger: "item" },
+        legend: { type: "scroll", bottom: 0, textStyle: { color: "#9dc9e9", fontSize: 10 } },
+        series: [{
+          type: "pie",
+          radius: ["35%", "58%"],
+          center: ["50%", "42%"],
+          label: { color: "#bad5e9", fontSize: 10 },
+          data: data.assetTypes,
+        }],
+      });
+
+      initChart("chartHeat")?.setOption({
+        tooltip: { position: "top" },
+        grid: { left: 56, right: 12, top: 8, bottom: 28 },
+        xAxis: { type: "category", data: data.heat.x, splitArea: { show: true }, axisLabel: { color: "#7e9dbd", fontSize: 10 } },
+        yAxis: { type: "category", data: data.heat.y, axisLabel: { color: "#7e9dbd", fontSize: 10 } },
+        visualMap: { min: 0, max: 12, show: false, inRange: { color: ["#06203a", "#0d6ea8", "#37e7ff", "#f2c75c", "#ff6d78"] } },
+        series: [{ type: "heatmap", data: data.heat.data, label: { show: false } }],
+      });
+
+      renderTopo(data.topology);
+
+      document.getElementById("eventBody").innerHTML = (data.events || []).map((e) => `<tr>
+        <td>${e.net}</td><td>${e.ip}</td><td>${e.resource}</td><td>${e.type}</td>
+        <td><span class="level-tag ${e.level}">${e.level}</span></td>
+        <td>${e.value}</td><td>${e.time}</td><td>${e.progress}</td>
+      </tr>`).join("");
+    }
+
+    function tickClock() {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      document.getElementById("clockTime").textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const week = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
+      document.getElementById("clockDate").textContent = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} 星期${week}`;
+    }
+
+    document.getElementById("viewTabs").innerHTML = S.listScreenViews().map((v) =>
+      `<button type="button" data-view="${v.key}" class="${v.key === "all" ? "active" : ""}">${v.label}</button>`
+    ).join("");
+
+    document.getElementById("viewTabs").addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-view]");
+      if (btn) renderAll(btn.dataset.view);
+    });
+
+    window.addEventListener("resize", () => {
+      Object.values(charts).forEach((c) => c?.resize());
+      renderAll(currentView);
+    });
+
+    tickClock();
+    setInterval(tickClock, 1000);
+    renderAll("all");
+  </script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>交换机端口管理 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/device-mgmt.css">
+</head>
+<body data-menu-key="device.ports" data-page-section="设备管理" data-page-title="交换机端口管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">交换机端口管理</h1>
+            <p class="page-desc">机架面板、端口性能明细与 IP/MAC 接入端口分布查询。</p>
+          </div>
+        </section>
+
+        <section class="card pad">
+          <div class="dm-ports-layout">
+            <div class="dm-device-list" id="switchList"></div>
+            <div class="dm-ports-main">
+              <div class="dm-tabs" role="tablist">
+                <button class="tab active" type="button" data-tab="rack">机架面板</button>
+                <button class="tab" type="button" data-tab="detail">端口详情</button>
+                <button class="tab" type="button" data-tab="bind">端口分布</button>
+              </div>
+              <div id="tabRack"></div>
+              <div id="tabDetail" class="hidden"></div>
+              <div id="tabBind" class="hidden"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const DM = window.DeviceMgmt;
+    const switches = DM.listSwitchDevices();
+    let deviceId = switches[0]?.id || "";
+    let tab = "rack";
+    let selectedPort = null;
+
+    function currentDevice() {
+      return DM.getDevice(deviceId);
+    }
+
+    function renderSwitchList() {
+      document.getElementById("switchList").innerHTML = switches.map((d) => `
+        <button type="button" class="${d.id === deviceId ? "is-active" : ""}" data-switch="${d.id}">
+          <span class="dm-avail-dot ${d.online ? "" : "off"}"></span>${d.name}
+          <small>${d.ip} · ${d.online ? "可用" : "不可用"}</small>
+        </button>`).join("") || `<div class="dm-empty">暂无交换机</div>`;
+    }
+
+    function slotClass(oper) {
+      if (oper === "up") return "up";
+      if (oper === "warn") return "warn";
+      if (oper === "down") return "down";
+      return "idle";
+    }
+
+    function shortPortName(name) {
+      const raw = String(name || "");
+      // GE0/0/3 → 0/0/3
+      return raw.replace(/^(GigabitEthernet|GE|XGE|10GE|Eth-Trunk)/i, "").replace(/^\//, "") || raw;
+    }
+
+    function ensureSelectedPort(ports) {
+      if (!ports.length) {
+        selectedPort = null;
+        return;
+      }
+      const stillValid = selectedPort && ports.some((p) => p.name === selectedPort.name);
+      if (stillValid) {
+        selectedPort = ports.find((p) => p.name === selectedPort.name);
+        return;
+      }
+      selectedPort = ports.find((p) => p.operStatus === "up") || ports[0];
+    }
+
+    function renderRack() {
+      const ports = DM.getPorts(deviceId);
+      ensureSelectedPort(ports);
+      const d = currentDevice();
+      const maxCol = Math.max(12, ...ports.map((p) => p.panelCol || 1), 1);
+      const maxRow = Math.max(1, ...ports.map((p) => p.panelRow || 1));
+      const ot = selectedPort ? DM.portOperTag(selectedPort.operStatus) : null;
+      const side = selectedPort ? `
+        <div class="dm-port-side">
+          <div class="dm-port-side-head">
+            <div class="dm-port-side-ico"><i class="fa-solid fa-ethernet"></i></div>
+            <div>
+              <h3>${selectedPort.name}</h3>
+              <p>操作状态 <span class="tag ${ot.tagClass}">${ot.label}</span></p>
+            </div>
+          </div>
+          <div class="dm-snap-kv">
+            <div><span>管理状态</span><strong>${selectedPort.adminStatus}</strong></div>
+            <div><span>操作状态</span><strong>${selectedPort.operStatus}</strong></div>
+            <div><span>发送速率</span><strong>${selectedPort.outRate} Mbps</strong></div>
+            <div><span>接收速率</span><strong>${selectedPort.inRate} Mbps</strong></div>
+          </div>
+        </div>` : `<div class="dm-port-side dm-empty">暂无端口</div>`;
+
+      document.getElementById("tabRack").innerHTML = `
+        <div class="dm-rack">
+          <h3 class="dm-rack-title"><i class="fa-solid fa-server" style="margin-right:6px;opacity:.85"></i>${d?.name || "-"} 前面板</h3>
+          <div class="dm-rack-grid" style="grid-template-columns:repeat(${maxCol}, 72px)">
+            ${Array.from({ length: maxRow * maxCol }, (_, i) => {
+              const row = Math.floor(i / maxCol) + 1;
+              const col = (i % maxCol) + 1;
+              const p = ports.find((x) => x.panelRow === row && x.panelCol === col);
+              if (!p) {
+                return `<span class="dm-port-slot idle" aria-hidden="true">
+                  <span class="dm-port-ico"><i class="fa-solid fa-minus"></i></span>
+                  <span class="dm-port-name">空</span>
+                </span>`;
+              }
+              const active = selectedPort && selectedPort.name === p.name ? " is-active" : "";
+              return `<button type="button" class="dm-port-slot ${slotClass(p.operStatus)}${active}" data-port-name="${p.name}" title="${p.name}">
+                <span class="dm-port-ico"><i class="fa-solid fa-ethernet"></i></span>
+                <span class="dm-port-name">${shortPortName(p.name)}</span>
+                <span class="dm-port-idx">#${col}</span>
+              </button>`;
+            }).join("")}
+          </div>
+        </div>
+        <p class="dm-port-legend">
+          <span><i class="up"></i>up</span>
+          <span><i class="warn"></i>warn</span>
+          <span><i class="down"></i>down</span>
+          <span><i class="idle"></i>空闲</span>
+        </p>
+        ${side}`;
+    }
+
+    function renderDetail() {
+      const ports = DM.getPorts(deviceId);
+      const d = currentDevice();
+      document.getElementById("tabDetail").innerHTML = `
+        <p style="margin:0 0 12px;font-size:13px">
+          <span class="dm-avail-dot ${d?.online ? "" : "off"}"></span>
+          设备可用性：${d?.online ? "正常" : "异常"} · ${d?.name || "-"}
+        </p>
+        <div class="table-wrap"><table class="table user-table">
+          <thead><tr>
+            <th>接口名称</th><th>管理状态</th><th>操作状态</th><th>发送速率</th><th>接收速率</th>
+          </tr></thead>
+          <tbody>${ports.map((p) => {
+            const ot = DM.portOperTag(p.operStatus);
+            return `<tr>
+              <td>${p.name}</td>
+              <td>${p.adminStatus}</td>
+              <td><span class="tag ${ot.tagClass}">${ot.label}</span></td>
+              <td>${p.outRate} Mbps</td>
+              <td>${p.inRate} Mbps</td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="5" class="dm-empty">暂无端口</td></tr>`}</tbody>
+        </table></div>`;
+    }
+
+    function renderBind(results, queried) {
+      const tableHtml = !results.length
+        ? `<div class="dm-empty">${queried ? "未找到接入端口" : "暂无端口分布数据"}</div>`
+        : `<div class="table-wrap"><table class="table user-table">
+            <thead><tr>
+              <th>终端</th><th>IP</th><th>MAC</th><th>接入交换机</th><th>端口</th><th>VLAN</th><th>最近发现</th>
+            </tr></thead>
+            <tbody>${results.map((r) => `<tr>
+              <td>${r.terminalName || "-"}</td>
+              <td>${r.terminalIp}</td>
+              <td>${r.terminalMac}</td>
+              <td>${r.switchName}</td>
+              <td>${r.portName}</td>
+              <td>${r.vlan ?? "-"}</td>
+              <td>${r.lastSeen || "-"}</td>
+            </tr>`).join("")}</tbody>
+          </table></div>`;
+      document.getElementById("tabBind").innerHTML = `
+        <div class="dm-query-bar">
+          <label class="form-field"><span class="form-label">IP 或 MAC</span>
+            <input class="form-control" id="bindQuery" placeholder="如 192.168.10.56 或 AA:BB:CC:11:22:01" value="${queried || ""}"></label>
+          <button class="btn btn-primary" type="button" id="btnBindQuery">查询</button>
+          <button class="btn btn-secondary" type="button" id="btnBindReset">重置</button>
+        </div>
+        ${tableHtml}`;
+    }
+
+    function showTab() {
+      document.querySelectorAll(".dm-tabs .tab").forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
+      document.getElementById("tabRack").classList.toggle("hidden", tab !== "rack");
+      document.getElementById("tabDetail").classList.toggle("hidden", tab !== "detail");
+      document.getElementById("tabBind").classList.toggle("hidden", tab !== "bind");
+      if (tab === "rack") renderRack();
+      if (tab === "detail") renderDetail();
+      if (tab === "bind") renderBind(DM.queryPortBinding(""), "");
+    }
+
+    function refresh() {
+      renderSwitchList();
+      showTab();
+    }
+
+    document.getElementById("switchList").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-switch]");
+      if (!btn) return;
+      deviceId = btn.dataset.switch;
+      selectedPort = null;
+      refresh();
+    });
+
+    document.querySelector(".dm-tabs").addEventListener("click", (e) => {
+      const t = e.target.closest("[data-tab]");
+      if (!t) return;
+      tab = t.dataset.tab;
+      showTab();
+    });
+
+    document.getElementById("tabRack").addEventListener("click", (e) => {
+      const slot = e.target.closest("[data-port-name]");
+      if (!slot) return;
+      selectedPort = DM.getPorts(deviceId).find((p) => p.name === slot.dataset.portName) || null;
+      renderRack();
+    });
+
+    document.getElementById("tabBind").addEventListener("click", (e) => {
+      if (e.target.closest("#btnBindReset")) {
+        renderBind(DM.queryPortBinding(""), "");
+        return;
+      }
+      if (!e.target.closest("#btnBindQuery")) return;
+      const q = document.getElementById("bindQuery")?.value?.trim() || "";
+      renderBind(DM.queryPortBinding(q), q);
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

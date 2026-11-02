@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>告警处理 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+</head>
+<body class="alarm-page alarm-rule-page" data-menu-key="fault.handle" data-page-section="故障管理" data-page-title="告警处理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">告警处理</h1>
+            <p class="page-desc">灵活配置告警规则：所属域、告警名称、接收方式、接收人员与告警升级策略。</p>
+          </div>
+          <div class="btn-row"></div>
+        </section>
+
+        <section class="card filters alarm-filter-card">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">规则名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">所属域</span>
+              <select class="form-control" data-filter="domain">
+                <option value="">全部</option>
+                <option>核心机房</option><option>数据中心</option><option>核心网络</option><option>办公区</option><option>DMZ</option><option>边界网络</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">告警等级</span>
+              <select class="form-control" data-filter="level"><option value="">全部</option><option>告警</option><option>预警</option><option>提醒</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">接收方式</span>
+              <select class="form-control" data-filter="channel"><option value="">全部</option><option>邮件</option><option>微信</option><option>钉钉</option></select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card alarm-list-card user-list-card">
+          <div class="card-title-row alarm-toolbar user-toolbar">
+            <h2 class="card-title">告警规则列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新增规则</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table alarm-rule-table user-table">
+              <thead>
+                <tr>
+                  <th>规则名称</th>
+                  <th>所属域</th>
+                  <th>告警类型</th>
+                  <th>等级</th>
+                  <th>接收方式</th>
+                  <th>接收人员</th>
+                  <th>升级</th>
+                  <th>启用</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="alarmRuleBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination"><span>共 <strong id="alarmRuleCount">0</strong> 条，每页 10 条</span><span class="page-item active">1</span></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script>
+    const FA = window.FaultAlarm;
+    const alarmRules = FA.rules.map((r) => ({ ...r }));
+    let filtered = alarmRules.slice();
+
+    const notificationDirectory = [
+      { id: "ops", name: "运维一组", people: [{ id: "zhang", name: "张三" }, { id: "li", name: "李四" }] },
+      { id: "net", name: "网络组", people: [{ id: "zhao", name: "赵工" }, { id: "chen", name: "陈工" }] },
+      { id: "dba", name: "DBA组", people: [{ id: "wang", name: "王工" }, { id: "sun", name: "孙工" }] },
+    ];
+
+    const emptyCondition = () => ({ property: "", operator: "", threshold: "" });
+    let wizardState = {
+      step: 1,
+      mode: "create",
+      rule: null,
+      trigger: "property",
+      monitorRule: "any",
+      model: "",
+      filter: "periodic",
+      period: "60",
+      offlineSeconds: "60",
+      conditionValues: [emptyCondition(), emptyCondition()],
+      departments: [],
+      people: [],
+      method: "邮件",
+      domain: "核心机房",
+      escalate: true,
+      escalateHours: "2",
+      escalateTo: "运维主管",
+      openMulti: null,
+    };
+
+    function levelClass(level) { return level === "告警" ? "high" : level === "预警" ? "medium" : "low"; }
+    function byId(id) { return alarmRules.find((r) => String(r.id) === String(id)) || alarmRules[0]; }
+
+    function triggerFromType(type) {
+      if (type === "设备离线" || type === "接口故障") return "offline";
+      if (type === "第三方报警") return "third-party";
+      return "property";
+    }
+    function triggerLabel(trigger) {
+      return ({ property: "设备属性监测触发", offline: "设备离线监测触发", "third-party": "第三方报警信息" })[trigger] || "-";
+    }
+
+    function renderAlarmRules(list = filtered) {
+      filtered = list;
+      document.getElementById("alarmRuleBody").innerHTML = list.map((item) => `
+        <tr data-rule-id="${item.id}">
+          <td><strong>${item.name}</strong></td>
+          <td>${item.domain}</td>
+          <td>${item.type}</td>
+          <td><span class="alarm-level ${levelClass(item.level)}">${item.level}</span></td>
+          <td><span class="alarm-channel-tags">${(item.channels || []).map((c) => `<span class="alarm-channel-tag">${c}</span>`).join("")}</span></td>
+          <td>${item.receivers}</td>
+          <td>${item.escalate ? `${item.escalateHours}h → ${item.escalateTo || "上级"}` : "关闭"}</td>
+          <td>
+            <label class="alarm-rule-switch">
+              <input type="checkbox" data-rule-status="${item.id}" ${item.status === "启用" ? "checked" : ""}>
+              <span class="alarm-rule-switch-track"></span>
+            </label>
+          </td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-rule-action="detail" data-rule-id="${item.id}">详情</button>
+            <button class="table-action" type="button" data-rule-action="edit" data-rule-id="${item.id}">编辑</button>
+            <button class="table-action status-danger" type="button" data-rule-action="delete" data-rule-id="${item.id}">删除</button>
+          </td>
+        </tr>`).join("");
+      document.getElementById("alarmRuleCount").textContent = list.length;
+    }
+
+    function levelTag(level) {
+      const cls = level === "告警" || level === "严重" ? "danger" : level === "预警" || level === "主要" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+    function statusTag(status) {
+      const cls = status === "启用" || status === "正常" ? "success" : "danger";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+
+    function openDetail(item) {
+      window.openAppDrawer({
+        title: "告警规则详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">规则名称</span><span class="info-value">${item.name || "-"}</span></div>
+            <div class="info-item"><span class="info-label">所属域</span><span class="info-value">${item.domain || "-"}</span></div>
+            <div class="info-item"><span class="info-label">告警类型</span><span class="info-value">${item.type || "-"}</span></div>
+            <div class="info-item"><span class="info-label">告警等级</span><span class="info-value">${levelTag(item.level)}</span></div>
+            <div class="info-item"><span class="info-label">关联资源</span><span class="info-value">${item.devices || "-"}</span></div>
+            <div class="info-item"><span class="info-label">接收方式</span><span class="info-value">${(item.channels || []).join("、") || "-"}</span></div>
+            <div class="info-item"><span class="info-label">接收人员</span><span class="info-value">${item.receivers || "-"}</span></div>
+            <div class="info-item"><span class="info-label">告警升级</span><span class="info-value">${item.escalate ? `${item.escalateHours} 小时未处理升级至 ${item.escalateTo}` : "未启用"}</span></div>
+            <div class="info-item"><span class="info-label">启用状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+            <div class="info-item"><span class="info-label">规则说明</span><span class="info-value">${item.description || "-"}</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function conditionMarkup() {
+      return wizardState.conditionValues.map((condition, index) => `
+        <div class="alarm-condition">
+          <span class="alarm-condition-label">条件${index + 1}：</span>
+          <select class="form-control" data-condition-field="property">
+            <option value="">请选择属性</option>
+            ${["CPU使用率", "表空间使用率", "会话数", "带宽利用率", "磁盘IO", "内存缓冲"].map((p) => `<option value="${p}" ${condition.property === p ? "selected" : ""}>${p}</option>`).join("")}
+          </select>
+          <select class="form-control" data-condition-field="operator">
+            <option value="">请选择运算符</option>
+            ${["等于", "大于", "大于等于", "小于", "小于等于"].map((o) => `<option value="${o}" ${condition.operator === o ? "selected" : ""}>${o}</option>`).join("")}
+          </select>
+          <input class="form-control" data-condition-field="threshold" value="${condition.threshold}" placeholder="请输入阈值">
+          <button class="alarm-condition-remove" type="button" data-condition-action="remove" data-condition-index="${index}" aria-label="删除条件"><i class="fa-solid fa-circle-minus"></i></button>
+        </div>`).join("");
+    }
+
+    function wizardStepMarkup() {
+      const rule = wizardState.rule || {};
+      return `<div class="alarm-wizard" data-wizard-mode="${wizardState.mode}">
+        <div class="alarm-wizard-steps">
+          <button class="alarm-wizard-step active" type="button" data-wizard-step="1"><span class="alarm-step-index">1</span>输入基本信息</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="2"><span class="alarm-step-index">2</span>触发条件</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="3"><span class="alarm-step-index">3</span>过滤规则</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="4"><span class="alarm-step-index">4</span>发送方式</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="5"><span class="alarm-step-index">5</span>保存预览</button>
+        </div>
+        <div class="alarm-wizard-content">
+          <section data-wizard-panel="1">
+            <div class="form-grid-2">
+              <label class="form-field form-item"><span class="form-label form-required">规则名称</span><input class="form-control" data-wizard-field="name" value="${rule.name || ""}" placeholder="请输入规则名称"></label>
+              <label class="form-field form-item"><span class="form-label form-required">报警类型</span>
+                <select class="form-control" data-wizard-field="type">
+                  <option value="">请选择报警类型</option>
+                  ${["CPU超阈", "表空间超阈", "会话超阈", "设备离线", "带宽利用率超阈", "磁盘IO异常", "接口故障", "第三方报警"].map((t) => `<option ${rule.type === t ? "selected" : ""}>${t}</option>`).join("")}
+                </select>
+              </label>
+              <label class="form-field form-item"><span class="form-label form-required">报警等级</span>
+                <select class="form-control" data-wizard-field="level">
+                  <option value="">请选择报警等级</option>
+                  ${["告警", "预警", "提醒"].map((l) => `<option ${rule.level === l ? "selected" : ""}>${l}</option>`).join("")}
+                </select>
+              </label>
+              <label class="form-field form-item"><span class="form-label form-required">所属域</span>
+                <select class="form-control" data-wizard-field="domain">
+                  ${["核心机房", "数据中心", "核心网络", "办公区", "DMZ", "边界网络"].map((d) => `<option ${ (rule.domain || wizardState.domain) === d ? "selected" : ""}>${d}</option>`).join("")}
+                </select>
+              </label>
+              <label class="form-field form-item form-span-2"><span class="form-label">规则说明</span><textarea class="form-control textarea" data-wizard-field="description" placeholder="请输入规则说明">${rule.description || ""}</textarea></label>
+            </div>
+          </section>
+
+          <section class="hidden" data-wizard-panel="2">
+            <div class="alarm-tip">请设置当前报警规则的触发条件（触发源符合触发条件才能触发报警，满足自身相关条件的属性标记为异常），条件至多可添加五项。触发方式由第一步报警类型自动带出，不可修改。</div>
+            <div class="alarm-choice-row">
+              <span class="form-label form-required">触发方式</span>
+              <label class="alarm-choice"><input type="radio" name="alarm-trigger" value="property" ${wizardState.trigger === "property" ? "checked" : ""} disabled>设备属性监测触发</label>
+              <label class="alarm-choice"><input type="radio" name="alarm-trigger" value="offline" ${wizardState.trigger === "offline" ? "checked" : ""} disabled>设备离线监测触发</label>
+              <label class="alarm-choice"><input type="radio" name="alarm-trigger" value="third-party" ${wizardState.trigger === "third-party" ? "checked" : ""} disabled>第三方报警信息</label>
+            </div>
+            <div class="trigger-panel" data-trigger-panel="property">
+              <div class="alarm-field-group">
+                <label class="form-field"><span class="form-label form-required">选择设备</span>
+                  <select class="form-control" data-wizard-field="model">
+                    <option value="">请选择设备</option>
+                    ${["核心主机", "Oracle实例", "SQL Server实例", "核心交换机", "核心链路"].map((m) => `<option value="${m}" ${wizardState.model === m ? "selected" : ""}>${m}</option>`).join("")}
+                  </select>
+                </label>
+                <div class="alarm-choice-row alarm-trigger-rule-row">
+                  <span class="form-label form-required">监测规则</span>
+                  <label class="alarm-choice"><input type="radio" name="monitor-rule" value="any" ${wizardState.monitorRule === "any" ? "checked" : ""}>满足以下任一条件</label>
+                  <label class="alarm-choice"><input type="radio" name="monitor-rule" value="all" ${wizardState.monitorRule === "all" ? "checked" : ""}>满足以下全部条件</label>
+                </div>
+              </div>
+              <div class="alarm-condition-toolbar">
+                <span class="form-label">条件列表：</span>
+                <button class="alarm-link" type="button" data-condition-action="add"><i class="fa-solid fa-circle-plus"></i> 添加条件</button>
+                <button class="alarm-link" type="button" data-condition-action="clear"><i class="fa-solid fa-circle-xmark"></i> 清空列表</button>
+              </div>
+              <div class="alarm-condition-list" id="alarmConditionList"></div>
+            </div>
+            <div class="trigger-panel hidden" data-trigger-panel="offline">
+              <div class="alarm-rule-line"><span class="form-label form-required">监测规则：</span>设备离线持续超过 <input class="form-control alarm-inline-input" data-wizard-field="offlineSeconds" value="${wizardState.offlineSeconds}" inputmode="numeric"> 秒时触发报警</div>
+            </div>
+            <div class="trigger-panel hidden" data-trigger-panel="third-party">
+              <div class="alarm-rule-line">接收到第三方报警信息，且报警设备是规则关联设备时，触发报警</div>
+            </div>
+          </section>
+
+          <section class="hidden" data-wizard-panel="3">
+            <div class="alarm-tip"><strong>重复报警处理</strong> 选择一种过滤方式，控制同一报警的重复生成与通知。设备属性/离线监测仅可选周期性或合并报警；第三方报警信息仅可选立即报警不过滤。</div>
+            <div class="alarm-choice-row"><span class="form-label form-required">过滤方式</span></div>
+            <div class="alarm-filter-options">
+              <label class="alarm-filter-option" data-filter-option="periodic">
+                <input type="radio" name="alarm-filter" value="periodic" ${wizardState.filter === "periodic" ? "checked" : ""}>
+                <span class="alarm-filter-card-option">
+                  <span class="alarm-filter-card-head"><span class="alarm-filter-card-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span><strong>周期性报警</strong><small>在指定周期内只生成一次</small></span></span>
+                  <span class="alarm-filter-card-body">同一个设备、同一个报警在周期之内，将不再重复生成告警和通知，直到周期结束后若报警还存在，再次触发。</span>
+                </span>
+              </label>
+              <label class="alarm-filter-option" data-filter-option="merge">
+                <input type="radio" name="alarm-filter" value="merge" ${wizardState.filter === "merge" ? "checked" : ""}>
+                <span class="alarm-filter-card-option">
+                  <span class="alarm-filter-card-head"><span class="alarm-filter-card-icon"><i class="fa-solid fa-layer-group"></i></span><span><strong>持续报警合并报警一次</strong><small>持续异常只保留一条报警</small></span></span>
+                  <span class="alarm-filter-card-body">同一设备同一报警只触发一次，直到设备不满足触发条件为止。该过滤方式不适用于第三方消息报警。</span>
+                </span>
+              </label>
+              <label class="alarm-filter-option" data-filter-option="none">
+                <input type="radio" name="alarm-filter" value="none" ${wizardState.filter === "none" ? "checked" : ""}>
+                <span class="alarm-filter-card-option">
+                  <span class="alarm-filter-card-head"><span class="alarm-filter-card-icon"><i class="fa-solid fa-bolt"></i></span><span><strong>立即报警，不过滤</strong><small>每次满足条件都立即通知</small></span></span>
+                  <span class="alarm-filter-card-body">只要设备满足报警触发规则，就立即报警。不过滤极易导致大量服务器报警，仅限第三方消息报警使用。</span>
+                </span>
+              </label>
+            </div>
+            <div class="alarm-period ${wizardState.filter === "periodic" ? "" : "hidden"}" data-alarm-period>
+              <span class="form-label form-required">报警周期</span>
+              <input class="form-control" data-wizard-field="period" value="${wizardState.period}" inputmode="numeric">
+              <span>分钟</span>
+            </div>
+          </section>
+
+          <section class="hidden" data-wizard-panel="4">
+            <div class="alarm-tip">请设置报警通知的部门、人员和通知方式（邮件 / 微信 / 钉钉），并可配置超时升级。</div>
+            <div class="alarm-send-section">
+              <h3 class="alarm-summary-title">发送方式</h3>
+              <div class="alarm-send-grid">
+                <div class="form-field form-item">
+                  <span class="form-label form-required">部门</span>
+                  <div class="alarm-tag-select" data-multi-select="departments">
+                    <button class="alarm-tag-control" type="button" data-multi-trigger="departments" aria-expanded="false"><span data-multi-value="departments"></span><i class="fa-solid fa-chevron-down"></i></button>
+                    <div class="alarm-tag-dropdown" data-multi-options="departments"></div>
+                  </div>
+                </div>
+                <div class="form-field form-item">
+                  <span class="form-label form-required">通知人员</span>
+                  <div class="alarm-tag-select" data-multi-select="people">
+                    <button class="alarm-tag-control" type="button" data-multi-trigger="people" aria-expanded="false"><span data-multi-value="people"></span><i class="fa-solid fa-chevron-down"></i></button>
+                    <div class="alarm-tag-dropdown" data-multi-options="people"></div>
+                  </div>
+                </div>
+                <label class="form-field form-item"><span class="form-label form-required">通知方式</span>
+                  <select class="form-control" data-wizard-field="method">
+                    <option value="邮件">邮件</option>
+                    <option value="微信">微信</option>
+                    <option value="钉钉">钉钉</option>
+                    <option value="邮件+钉钉">邮件+钉钉</option>
+                    <option value="邮件+微信+钉钉">邮件+微信+钉钉</option>
+                  </select>
+                </label>
+                <label class="form-field form-item"><span class="form-label">启用升级</span>
+                  <select class="form-control" data-wizard-field="escalate">
+                    <option value="true">启用</option>
+                    <option value="false">关闭</option>
+                  </select>
+                </label>
+                <label class="form-field form-item"><span class="form-label">升级小时数</span><input class="form-control" data-wizard-field="escalateHours" value="${wizardState.escalateHours}" inputmode="numeric"></label>
+                <label class="form-field form-item"><span class="form-label">升级对象</span><input class="form-control" data-wizard-field="escalateTo" value="${wizardState.escalateTo}" placeholder="上一级领导"></label>
+              </div>
+            </div>
+          </section>
+
+          <section class="hidden" data-wizard-panel="5">
+            <div class="alarm-tip">确认已填写信息，提交保存：</div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">基本信息</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">规则名称</th><td data-summary="name">-</td><th class="summary-label">报警类型</th><td data-summary="type">-</td></tr>
+                <tr><th class="summary-label">报警等级</th><td data-summary="level">-</td><th class="summary-label">所属域</th><td data-summary="domain">-</td></tr>
+                <tr><th class="summary-label">规则说明</th><td colspan="3" data-summary="description">-</td></tr>
+              </tbody></table>
+            </div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">触发条件</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">触发方式</th><td data-summary="trigger">-</td><th class="summary-label">设备</th><td data-summary="model">-</td></tr>
+                <tr><th class="summary-label">监测规则</th><td colspan="3" data-summary="monitor">-</td></tr>
+                <tr><th class="summary-label">条件列表</th><td colspan="3" data-summary="conditions">-</td></tr>
+              </tbody></table>
+            </div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">过滤方式</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">过滤方式</th><td data-summary="filter">-</td><th class="summary-label">报警周期</th><td data-summary="period">-</td></tr>
+              </tbody></table>
+            </div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">发送方式</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">部门</th><td data-summary="departments">-</td><th class="summary-label">通知人员</th><td data-summary="people">-</td></tr>
+                <tr><th class="summary-label">通知方式</th><td data-summary="method">-</td><th class="summary-label">告警升级</th><td data-summary="escalate">-</td></tr>
+              </tbody></table>
+            </div>
+          </section>
+        </div>
+      </div>`;
+    }
+
+    function updateConditions() {
+      const list = document.getElementById("alarmConditionList");
+      if (list) list.innerHTML = conditionMarkup();
+    }
+
+    function updateTrigger(trigger) {
+      wizardState.trigger = trigger;
+      document.querySelectorAll("[data-trigger-panel]").forEach((panel) => panel.classList.toggle("hidden", panel.dataset.triggerPanel !== trigger));
+      document.querySelectorAll('input[name="alarm-trigger"]').forEach((input) => {
+        input.checked = input.value === trigger;
+        input.disabled = true;
+      });
+      syncFilterOptionsByTrigger(trigger);
+    }
+
+    function syncTriggerFromType(type) {
+      if (!type) return wizardState.trigger;
+      const trigger = triggerFromType(type);
+      updateTrigger(trigger);
+      return trigger;
+    }
+
+    function allowedFiltersForTrigger(trigger = wizardState.trigger) {
+      return trigger === "third-party" ? ["none"] : ["periodic", "merge"];
+    }
+
+    function updateFilterMode(mode) {
+      wizardState.filter = mode;
+      const period = document.querySelector("[data-alarm-period]");
+      if (period) period.classList.toggle("hidden", mode !== "periodic");
+    }
+
+    function syncFilterOptionsByTrigger(trigger = wizardState.trigger) {
+      const allowed = allowedFiltersForTrigger(trigger);
+      document.querySelectorAll("[data-filter-option]").forEach((option) => {
+        const key = option.dataset.filterOption;
+        const show = allowed.includes(key);
+        option.classList.toggle("hidden", !show);
+        const input = option.querySelector('input[name="alarm-filter"]');
+        if (input) input.disabled = !show;
+      });
+      if (!allowed.includes(wizardState.filter)) {
+        updateFilterMode(allowed[0]);
+        const input = document.querySelector(`input[name="alarm-filter"][value="${allowed[0]}"]`);
+        if (input) input.checked = true;
+      } else {
+        updateFilterMode(wizardState.filter);
+      }
+    }
+
+    function captureWizardState() {
+      const body = document.getElementById("drawerBody");
+      if (!body) return;
+      const get = (key) => body.querySelector(`[data-wizard-field="${key}"]`)?.value || "";
+      wizardState.model = get("model");
+      wizardState.offlineSeconds = get("offlineSeconds");
+      wizardState.period = get("period");
+      wizardState.domain = get("domain") || wizardState.domain;
+      wizardState.method = get("method") || "邮件";
+      wizardState.escalate = get("escalate") !== "false";
+      wizardState.escalateHours = get("escalateHours") || "2";
+      wizardState.escalateTo = get("escalateTo") || "";
+      wizardState.monitorRule = body.querySelector("input[name=monitor-rule]:checked")?.value || wizardState.monitorRule;
+      wizardState.conditionValues = [...body.querySelectorAll("#alarmConditionList .alarm-condition")].map((row) => ({
+        property: row.querySelector('[data-condition-field="property"]')?.value || "",
+        operator: row.querySelector('[data-condition-field="operator"]')?.value || "",
+        threshold: row.querySelector('[data-condition-field="threshold"]')?.value.trim() || "",
+      }));
+    }
+
+    function renderMultiSelects() {
+      const body = document.getElementById("drawerBody");
+      if (!body) return;
+      const allowedPeople = notificationDirectory.filter((item) => wizardState.departments.includes(item.id)).flatMap((item) => item.people);
+      const render = (key, source, placeholder) => {
+        const component = body.querySelector(`[data-multi-select="${key}"]`);
+        if (!component) return;
+        const value = component.querySelector(`[data-multi-value="${key}"]`);
+        const dropdown = component.querySelector(`[data-multi-options="${key}"]`);
+        const selected = wizardState[key].map((id) => source.find((item) => item.id === id)).filter(Boolean);
+        const control = component.querySelector("[data-multi-trigger]");
+        value.innerHTML = selected.length
+          ? selected.map((item) => `<span class="alarm-selection-tag">${item.name}<span role="button" tabindex="0" data-tag-remove="${key}" data-tag-id="${item.id}">×</span></span>`).join("")
+          : `<span class="alarm-tag-placeholder">${placeholder}</span>`;
+        dropdown.innerHTML = source.length
+          ? source.map((item) => `<button class="alarm-tag-option ${wizardState[key].includes(item.id) ? "selected" : ""}" type="button" data-multi-option="${key}" data-option-id="${item.id}"><span>${item.name}</span>${wizardState[key].includes(item.id) ? '<i class="fa-solid fa-check"></i>' : ""}</button>`).join("")
+          : '<span class="alarm-tag-empty">请先选择部门</span>';
+        component.classList.toggle("open", wizardState.openMulti === key);
+        control?.setAttribute("aria-expanded", String(wizardState.openMulti === key));
+      };
+      render("departments", notificationDirectory, "请选择部门");
+      render("people", allowedPeople, wizardState.departments.length ? "请选择通知人员" : "请先选择部门");
+      wizardState.people = wizardState.people.filter((id) => allowedPeople.some((item) => item.id === id));
+    }
+
+    function updateSummary() {
+      const body = document.getElementById("drawerBody");
+      if (!body) return;
+      captureWizardState();
+      const get = (key) => body.querySelector(`[data-wizard-field="${key}"]`)?.value || "-";
+      const set = (key, value) => { const item = body.querySelector(`[data-summary="${key}"]`); if (item) item.textContent = value || "-"; };
+      const names = (ids, source) => ids.map((id) => source.find((item) => item.id === id)?.name).filter(Boolean).join("、") || "-";
+      const people = notificationDirectory.flatMap((item) => item.people);
+      set("name", get("name"));
+      set("type", get("type"));
+      set("level", get("level"));
+      set("domain", get("domain"));
+      set("description", get("description"));
+      set("trigger", triggerLabel(wizardState.trigger));
+      set("model", wizardState.model || (wizardState.trigger === "offline" ? `离线 ${wizardState.offlineSeconds}s` : "-"));
+      set("monitor", ({ any: "满足以下任一条件", all: "满足以下全部条件" })[wizardState.monitorRule] || "-");
+      set("conditions", wizardState.conditionValues.map((item) => `${item.property} ${item.operator} ${item.threshold}`).filter((s) => s.trim()).join("；") || "-");
+      set("filter", ({ periodic: "周期性报警", merge: "持续报警合并报警一次", none: "立即报警，不过滤" })[wizardState.filter]);
+      set("period", wizardState.filter === "periodic" ? `${wizardState.period || 60} 分钟` : "-");
+      set("departments", names(wizardState.departments, notificationDirectory));
+      set("people", names(wizardState.people, people));
+      set("method", wizardState.method);
+      set("escalate", wizardState.escalate ? `${wizardState.escalateHours} 小时 → ${wizardState.escalateTo || "上级"}` : "关闭");
+    }
+
+    function clearValidation(panel) {
+      panel.querySelectorAll(".error").forEach((item) => item.classList.remove("error"));
+      panel.querySelectorAll(".form-error").forEach((item) => item.remove());
+    }
+
+    function markValidation(field, message) {
+      if (!field) return;
+      field.classList.add("error");
+      const host = field.closest(".form-field") || field.parentElement;
+      if (!host || host.querySelector(".form-error")) return;
+      const error = document.createElement("span");
+      error.className = "form-error";
+      error.textContent = message;
+      host.appendChild(error);
+    }
+
+    function validateWizardStep(step) {
+      const body = document.getElementById("drawerBody");
+      const panel = body?.querySelector(`[data-wizard-panel="${step}"]`);
+      if (!panel) return true;
+      captureWizardState();
+      clearValidation(panel);
+      let valid = true;
+      const required = (field, message) => {
+        if (!field || !String(field.value || "").trim()) {
+          if (field) markValidation(field, message);
+          valid = false;
+        }
+      };
+      if (step === 1) {
+        required(panel.querySelector('[data-wizard-field="name"]'), "请输入规则名称");
+        required(panel.querySelector('[data-wizard-field="type"]'), "请选择报警类型");
+        required(panel.querySelector('[data-wizard-field="level"]'), "请选择报警等级");
+      }
+      if (step === 2 && wizardState.trigger === "property") {
+        required(panel.querySelector('[data-wizard-field="model"]'), "请选择设备");
+        if (!wizardState.conditionValues.length) valid = false;
+        panel.querySelectorAll("#alarmConditionList .alarm-condition").forEach((row) => {
+          ["property", "operator", "threshold"].forEach((fieldName) => {
+            const field = row.querySelector(`[data-condition-field="${fieldName}"]`);
+            if (!field || !field.value.trim()) {
+              markValidation(field, "请完善条件");
+              valid = false;
+            }
+          });
+        });
+      }
+      if (step === 2 && wizardState.trigger === "offline") {
+        const seconds = panel.querySelector('[data-wizard-field="offlineSeconds"]');
+        if (!seconds || !/^\d+$/.test(seconds.value.trim()) || Number(seconds.value) < 1) {
+          markValidation(seconds, "请输入大于等于1的整数秒数");
+          valid = false;
+        }
+      }
+      if (step === 3 && wizardState.filter === "periodic") {
+        const period = panel.querySelector('[data-wizard-field="period"]');
+        if (!period || !/^\d+$/.test(period.value.trim()) || Number(period.value) < 1) {
+          markValidation(period, "请输入大于等于1的整数分钟");
+          valid = false;
+        }
+      }
+      if (step === 4) {
+        if (!wizardState.departments.length) {
+          markValidation(panel.querySelector('[data-multi-select="departments"] .alarm-tag-control'), "请选择通知部门");
+          valid = false;
+        }
+        if (!wizardState.people.length) {
+          markValidation(panel.querySelector('[data-multi-select="people"] .alarm-tag-control'), "请选择通知人员");
+          valid = false;
+        }
+        required(panel.querySelector('[data-wizard-field="method"]'), "请选择通知方式");
+      }
+      return valid;
+    }
+
+    function syncWizard() {
+      const body = document.getElementById("drawerBody");
+      if (!body) return;
+      body.querySelectorAll("[data-wizard-step]").forEach((item) => {
+        const step = Number(item.dataset.wizardStep);
+        item.classList.toggle("active", step === wizardState.step);
+        item.classList.toggle("done", step < wizardState.step);
+        const idx = item.querySelector(".alarm-step-index");
+        if (idx) idx.innerHTML = step < wizardState.step ? '<i class="fa-solid fa-check"></i>' : String(step);
+      });
+      body.querySelectorAll("[data-wizard-panel]").forEach((panel) => {
+        panel.classList.toggle("hidden", Number(panel.dataset.wizardPanel) !== wizardState.step);
+      });
+      const footer = document.getElementById("drawerFooter");
+      if (footer) {
+        footer.innerHTML = `${wizardState.step > 1 ? '<button class="btn btn-secondary" type="button" data-wizard-action="prev">上一步</button>' : ""}<button class="btn btn-primary" type="button" data-wizard-action="${wizardState.step === 5 ? "save" : "next"}">${wizardState.step === 5 ? "保存" : "下一步"}</button><button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`;
+        footer.querySelectorAll("[data-drawer-close]").forEach((item) => item.addEventListener("click", window.closeAppDrawer));
+      }
+      if (wizardState.step >= 2) {
+        const type = body.querySelector('[data-wizard-field="type"]')?.value;
+        if (type) syncTriggerFromType(type);
+        else updateTrigger(wizardState.trigger);
+      } else {
+        updateTrigger(wizardState.trigger);
+      }
+      updateConditions();
+      renderMultiSelects();
+      if (wizardState.step === 5) updateSummary();
+    }
+
+    function openRuleWizard(mode, rule = null) {
+      const trigger = triggerFromType(rule?.type);
+      const filter = trigger === "third-party" ? "none" : "periodic";
+      wizardState = {
+        step: 1,
+        mode,
+        rule,
+        trigger,
+        monitorRule: "any",
+        model: rule?.devices || "",
+        filter,
+        period: "60",
+        offlineSeconds: "60",
+        conditionValues: [emptyCondition(), emptyCondition()],
+        departments: [],
+        people: [],
+        method: (rule?.channels || []).join("+") || "邮件",
+        domain: rule?.domain || "核心机房",
+        escalate: rule?.escalate !== false,
+        escalateHours: String(rule?.escalateHours || 2),
+        escalateTo: rule?.escalateTo || "运维主管",
+        openMulti: null,
+      };
+      window.openAppDrawer({
+        title: mode === "edit" ? "编辑报警规则" : "新增报警规则",
+        body: wizardStepMarkup(),
+        footer: "",
+      });
+      const methodSelect = document.querySelector('[data-wizard-field="method"]');
+      if (methodSelect && wizardState.method) methodSelect.value = wizardState.method;
+      const escalateSelect = document.querySelector('[data-wizard-field="escalate"]');
+      if (escalateSelect) escalateSelect.value = wizardState.escalate ? "true" : "false";
+      syncWizard();
+      updateTrigger(wizardState.trigger);
+      updateFilterMode(wizardState.filter);
+    }
+
+    function saveWizard() {
+      if (!validateWizardStep(4)) {
+        wizardState.step = 4;
+        syncWizard();
+        return;
+      }
+      captureWizardState();
+      const body = document.getElementById("drawerBody");
+      const get = (key) => body.querySelector(`[data-wizard-field="${key}"]`)?.value.trim() || "";
+      const people = notificationDirectory.flatMap((item) => item.people);
+      const receivers = wizardState.people.map((id) => people.find((p) => p.id === id)?.name).filter(Boolean).join("、");
+      const channels = wizardState.method.includes("+")
+        ? wizardState.method.split("+")
+        : [wizardState.method];
+      const payload = {
+        name: get("name"),
+        domain: get("domain"),
+        type: get("type"),
+        level: get("level"),
+        devices: wizardState.model || get("type"),
+        channels,
+        receivers: receivers || "-",
+        template: FA.templates[0]?.name || "主机性能告警模板",
+        escalate: wizardState.escalate,
+        escalateHours: Number(wizardState.escalateHours || 2),
+        escalateTo: wizardState.escalateTo,
+        description: get("description"),
+        status: "启用",
+      };
+      if (wizardState.mode === "edit" && wizardState.rule) {
+        Object.assign(byId(wizardState.rule.id), payload);
+      } else {
+        payload.id = Date.now();
+        alarmRules.unshift(payload);
+      }
+      window.closeAppDrawer();
+      filterRules();
+    }
+
+    function filterRules() {
+      const f = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      renderAlarmRules(alarmRules.filter((item) =>
+        (!f.name || item.name.includes(f.name))
+        && (!f.domain || item.domain === f.domain)
+        && (!f.level || item.level === f.level)
+        && (!f.channel || (item.channels || []).includes(f.channel))
+      ));
+    }
+
+    renderAlarmRules();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "create") openRuleWizard("create");
+      if (action === "search") filterRules();
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        renderAlarmRules(alarmRules.slice());
+      }
+
+      const rowAction = event.target.closest("[data-rule-action]");
+      if (rowAction) {
+        const rule = byId(rowAction.dataset.ruleId);
+        if (rowAction.dataset.ruleAction === "detail") openDetail(rule);
+        if (rowAction.dataset.ruleAction === "edit") openRuleWizard("edit", rule);
+        if (rowAction.dataset.ruleAction === "delete") {
+          window.openAppConfirm({
+            title: "提示",
+            message: `确认删除告警规则「${rule.name}」吗？`,
+            onConfirm: () => {
+              const idx = alarmRules.findIndex((r) => r.id === rule.id);
+              if (idx >= 0) alarmRules.splice(idx, 1);
+              filterRules();
+            },
+          });
+        }
+      }
+
+      const status = event.target.closest("[data-rule-status]");
+      if (status && event.target.matches("input[data-rule-status]")) {
+        const rule = byId(status.dataset.ruleStatus);
+        rule.status = event.target.checked ? "启用" : "停用";
+      }
+
+      const wizardAction = event.target.closest("[data-wizard-action]")?.dataset.wizardAction;
+      if (wizardAction === "prev") {
+        captureWizardState();
+        wizardState.step = Math.max(1, wizardState.step - 1);
+        syncWizard();
+      }
+      if (wizardAction === "next") {
+        if (!validateWizardStep(wizardState.step)) return;
+        captureWizardState();
+        if (wizardState.step === 1) {
+          const type = document.querySelector('[data-wizard-field="type"]')?.value;
+          syncTriggerFromType(type);
+        }
+        wizardState.step = Math.min(5, wizardState.step + 1);
+        syncWizard();
+      }
+      if (wizardAction === "save") saveWizard();
+
+      const stepBtn = event.target.closest("[data-wizard-step]");
+      if (stepBtn && Number(stepBtn.dataset.wizardStep) <= wizardState.step) {
+        captureWizardState();
+        wizardState.step = Number(stepBtn.dataset.wizardStep);
+        syncWizard();
+      }
+
+      const tagRemove = event.target.closest("[data-tag-remove]");
+      if (tagRemove) {
+        event.stopPropagation();
+        const key = tagRemove.dataset.tagRemove;
+        wizardState[key] = wizardState[key].filter((id) => id !== tagRemove.dataset.tagId);
+        renderMultiSelects();
+      }
+      const multiOption = event.target.closest("[data-multi-option]");
+      if (multiOption) {
+        const key = multiOption.dataset.multiOption;
+        const id = multiOption.dataset.optionId;
+        wizardState[key] = wizardState[key].includes(id) ? wizardState[key].filter((item) => item !== id) : wizardState[key].concat(id);
+        wizardState.openMulti = key;
+        renderMultiSelects();
+      }
+      const multiTrigger = event.target.closest("[data-multi-trigger]");
+      if (multiTrigger && !tagRemove) {
+        const key = multiTrigger.dataset.multiTrigger;
+        if (key !== "people" || wizardState.departments.length) {
+          wizardState.openMulti = wizardState.openMulti === key ? null : key;
+        }
+        renderMultiSelects();
+      }
+      if (!multiOption && !multiTrigger && !tagRemove && !event.target.closest("[data-multi-select]")) {
+        wizardState.openMulti = null;
+        renderMultiSelects();
+      }
+
+      const conditionAction = event.target.closest("[data-condition-action]")?.dataset.conditionAction;
+      if (conditionAction === "add" && wizardState.conditionValues.length < 5) {
+        captureWizardState();
+        wizardState.conditionValues.push(emptyCondition());
+        updateConditions();
+      }
+      if (conditionAction === "remove" && wizardState.conditionValues.length > 1) {
+        captureWizardState();
+        const idx = Number(event.target.closest("[data-condition-index]")?.dataset.conditionIndex || wizardState.conditionValues.length - 1);
+        wizardState.conditionValues.splice(idx, 1);
+        updateConditions();
+      }
+      if (conditionAction === "clear") {
+        captureWizardState();
+        wizardState.conditionValues = [];
+        updateConditions();
+      }
+    });
+
+    document.addEventListener("change", (event) => {
+      if (event.target.matches('[data-wizard-field="type"]')) syncTriggerFromType(event.target.value);
+      if (event.target.name === "alarm-filter") updateFilterMode(event.target.value);
+    });
+  </script>
+</body>
+</html>

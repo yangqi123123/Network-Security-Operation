@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备活动进程 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+  <link rel="stylesheet" href="../../assets/css/device-mgmt.css">
+</head>
+<body data-menu-key="device.processes" data-page-section="设备管理" data-page-title="设备活动进程">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">设备</span>
+              <select class="form-control" data-filter="deviceId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">进程名</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">用户</span><input class="form-control" data-filter="user" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">状态</span>
+              <select class="form-control" data-filter="state">
+                <option value="">全部</option>
+                <option value="alive">活</option>
+                <option value="dead">死</option>
+                <option value="sleep">sleep</option>
+                <option value="wait">等待</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键</span>
+              <select class="form-control" data-filter="critical">
+                <option value="">全部</option>
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">进程列表</h2>
+            <div class="btn-row">
+              <a class="btn btn-secondary" href="./process-alerts.html"><i class="fa-solid fa-bell"></i> 进程告警规则</a>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>进程名</th><th>PID</th><th>PPID</th><th>用户</th><th>优先级</th>
+                  <th>关键</th><th>终端</th><th>状态</th><th>CPU%</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="procBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="procPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const DM = window.DeviceMgmt;
+    let filter = {};
+    let rows = [];
+    let page = 1;
+    const pageSize = 10;
+
+    const deviceSel = document.querySelector('[data-filter="deviceId"]');
+    DM.listDevices().filter((d) => String(d.category).includes("server")).forEach((d) => {
+      deviceSel.insertAdjacentHTML("beforeend", `<option value="${d.id}">${d.name}</option>`);
+    });
+
+    function deviceName(id) {
+      return DM.getDevice(id)?.name || id;
+    }
+
+    function applyFilter() {
+      const f = { ...filter };
+      if (f.critical === "true") f.critical = true;
+      else if (f.critical === "false") f.critical = false;
+      else delete f.critical;
+      rows = DM.listProcesses(f);
+      page = 1;
+      render();
+    }
+
+    function render() {
+      const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+      page = Math.min(page, totalPages);
+      const slice = rows.slice((page - 1) * pageSize, page * pageSize);
+      document.getElementById("procBody").innerHTML = slice.map((p) => {
+        const st = DM.processStateTag(p.state);
+        return `<tr data-id="${p.id}">
+          <td><strong>${p.name}</strong><br><small class="status-muted">${deviceName(p.deviceId)}</small></td>
+          <td>${p.pid}</td><td>${p.ppid}</td><td>${p.user}</td><td>${p.priority}</td>
+          <td>${p.critical ? '<span class="tag warning">是</span>' : "否"}</td>
+          <td>${p.tty || "-"}</td>
+          <td><span class="tag ${st.tagClass}">${st.label}</span></td>
+          <td>${p.cpu}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-proc="detail" data-id="${p.id}">详情</button>
+            <button class="table-action" type="button" data-proc="priority" data-id="${p.id}">优先级</button>
+            <button class="table-action" type="button" data-proc="watch" data-id="${p.id}">${p.critical ? "取消关注" : "关注"}</button>
+            <button class="table-action status-danger" type="button" data-proc="kill" data-id="${p.id}">停止</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="10" class="dm-empty">暂无进程</td></tr>`;
+
+      let pager = `<span>共 <strong>${rows.length}</strong> 条记录，每页 10 条</span>`;
+      pager += `<span class="page-item${page === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= totalPages; i += 1) pager += `<span class="page-item${i === page ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      pager += `<span class="page-item${page === totalPages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("procPager").innerHTML = pager;
+    }
+
+    function byId(id) { return DM.listProcesses().find((x) => x.id === id); }
+
+    function escHtml(text) {
+      return String(text == null ? "" : text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderHistoryTimeline(history) {
+      const list = Array.isArray(history) ? [...history] : [];
+      list.sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+      if (!list.length) return `<p class="alarm-detail-empty">暂无处理记录</p>`;
+      return `<ol class="alarm-history-timeline">${list.map((h) => `
+        <li class="alarm-history-item">
+          <span class="alarm-history-dot" aria-hidden="true"></span>
+          <div class="alarm-history-body">
+            <time class="alarm-history-time">${escHtml(h.time || "-")}</time>
+            <p class="alarm-history-text"><strong>${escHtml(h.operator || "-")}</strong> ${escHtml(h.action || "-")}</p>
+          </div>
+        </li>`).join("")}</ol>`;
+    }
+
+    function openDetail(p) {
+      const st = DM.processStateTag(p.state);
+      const history = DM.getProcessHistory(p.id);
+      window.openAppDrawer({
+        title: "进程详情",
+        body: `
+          <div class="alarm-detail-tabs">
+            <button class="alarm-detail-tab active" type="button" data-detail-tab="info">进程信息</button>
+            <button class="alarm-detail-tab" type="button" data-detail-tab="records">处理记录</button>
+          </div>
+          <div data-detail-pane="info">
+            <section class="detail-section"><h3 class="detail-title">基础信息</h3>
+              <div class="detail-grid user-detail-grid">
+                <div class="info-item"><span class="info-label">进程名称</span><span class="info-value">${escHtml(p.name)}</span></div>
+                <div class="info-item"><span class="info-label">所属设备</span><span class="info-value">${escHtml(deviceName(p.deviceId))}</span></div>
+                <div class="info-item"><span class="info-label">进程 ID</span><span class="info-value">${p.pid}</span></div>
+                <div class="info-item"><span class="info-label">父进程 ID</span><span class="info-value">${p.ppid}</span></div>
+                <div class="info-item"><span class="info-label">运行用户</span><span class="info-value">${escHtml(p.user)}</span></div>
+                <div class="info-item"><span class="info-label">优先级</span><span class="info-value">${escHtml(p.priority)}</span></div>
+                <div class="info-item"><span class="info-label">关键进程</span><span class="info-value">${p.critical ? '<span class="tag warning">是</span>' : "否"}</span></div>
+                <div class="info-item"><span class="info-label">运行终端</span><span class="info-value">${escHtml(p.tty || "-")}</span></div>
+                <div class="info-item"><span class="info-label">状态</span><span class="info-value"><span class="tag ${st.tagClass}">${st.label}</span></span></div>
+                <div class="info-item"><span class="info-label">CPU%</span><span class="info-value">${p.cpu}</span></div>
+                <div class="info-item"><span class="info-label">备注信息</span><span class="info-value">-</span></div>
+              </div>
+            </section>
+          </div>
+          <div class="hidden" data-detail-pane="records">
+            <section class="detail-section">
+              <h3 class="detail-title">处理记录</h3>
+              ${renderHistoryTimeline(history)}
+            </section>
+          </div>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    document.addEventListener("click", (e) => {
+      const action = e.target.closest("[data-action]")?.dataset.action;
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        filter = {};
+        applyFilter();
+      }
+      if (action === "search") {
+        filter = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+        applyFilter();
+      }
+      const pn = e.target.closest("[data-page-number]");
+      const pa = e.target.closest("[data-page-action]");
+      if (pn) { page = Number(pn.dataset.pageNumber); render(); }
+      if (pa) {
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        page = pa.dataset.pageAction === "prev" ? Math.max(1, page - 1) : Math.min(totalPages, page + 1);
+        render();
+      }
+      const proc = e.target.closest("[data-proc]");
+      if (proc) {
+        const p = byId(proc.dataset.id);
+        if (!p) return;
+        if (proc.dataset.proc === "detail") openDetail(p);
+        if (proc.dataset.proc === "watch") { DM.updateProcess(p.id, { critical: !p.critical }); applyFilter(); }
+        if (proc.dataset.proc === "kill") {
+          window.openAppConfirm({
+            title: "提示",
+            message: `确认停止进程「${p.name}」(PID ${p.pid}) 吗？`,
+            onConfirm: () => { DM.killProcess(p.id); applyFilter(); },
+          });
+        }
+        if (proc.dataset.proc === "priority") {
+          window.openAppDrawer({
+            title: "修改优先级",
+            body: `<label class="form-field form-item"><span class="form-label">优先级</span>
+              <input class="form-control" data-priority-val value="${p.priority}" placeholder="如 Normal / High / 20"></label>`,
+            footer: `<button class="btn btn-secondary" data-drawer-close>取消</button>
+              <button class="btn btn-primary" type="button" data-save-priority="${p.id}">确认</button>`,
+          });
+        }
+      }
+      const savePri = e.target.closest("[data-save-priority]");
+      if (savePri) {
+        const val = document.querySelector("[data-priority-val]")?.value?.trim();
+        if (val) DM.updateProcess(savePri.dataset.savePriority, { priority: val });
+        document.querySelector("[data-drawer-close]")?.click();
+        applyFilter();
+      }
+      const tab = e.target.closest("[data-detail-tab]");
+      if (tab) {
+        const body = document.getElementById("drawerBody");
+        body?.querySelectorAll("[data-detail-tab]").forEach((el) => el.classList.toggle("active", el === tab));
+        body?.querySelectorAll("[data-detail-pane]").forEach((pane) => {
+          pane.classList.toggle("hidden", pane.dataset.detailPane !== tab.dataset.detailTab);
+        });
+      }
+    });
+
+    applyFilter();
+  </script>
+</body>
+</html>

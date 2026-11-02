@@ -1,0 +1,68 @@
+@import url("./list-viewport.css");
+
+/* 威胁监测与响应：不改 .main padding-top；页内 Tab 对齐设备台账下划线选中态 */
+
+.threat-page .content-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border, #E5EAF3);
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+.threat-page .content-tabs .tab {
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary, #50565D);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.threat-page .content-tabs .tab.active {
+  color: var(--primary, #1476FF);
+  border-bottom: 2px solid var(--primary, #1476FF);
+  font-weight: 600;
+}
+
+.threat-sys-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.threat-log-table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+.threat-log-table th,
+.threat-log-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider, #EDF1F7);
+  text-align: left;
+}
+
+.threat-log-table th {
+  color: var(--text-secondary, #86909C);
+  font-weight: 600;
+  background: var(--primary-bg, #F2F7FF);
+}
+
+.threat-detail-block {
+  margin-top: 16px;
+}
+
+.threat-page .panel-hidden {
+  display: none;
+}
+
+[data-theme="dark"] .threat-page .content-tabs {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .threat-log-table th {
+  background: rgba(255, 255, 255, 0.04);
+}

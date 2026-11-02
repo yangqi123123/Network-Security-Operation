@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>统一管控 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/screen-protect.css">
+</head>
+<body class="sp-page" data-menu-key="screen.control" data-page-section="电子屏防护管理" data-page-title="统一管控">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="spControlMetrics">
+          <article class="metric-card"><div class="metric-label">电子屏总数</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">在线</div><div class="metric-number" data-m="online">0</div></article>
+          <article class="metric-card"><div class="metric-label">播放中</div><div class="metric-number" data-m="playing">0</div></article>
+          <article class="metric-card"><div class="metric-label">当前告警</div><div class="metric-number" data-m="alarm">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="名称/位置/节目">
+            </label>
+            <label class="form-field"><span class="form-label">设备状态</span>
+              <select class="form-control" data-filter="deviceStatus">
+                <option value="">全部</option>
+                <option value="online">在线</option>
+                <option value="offline">离线</option>
+                <option value="fault">故障</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">告警状态</span>
+              <select class="form-control" data-filter="alarmStatus">
+                <option value="">全部</option>
+                <option value="none">无告警</option>
+                <option value="alarm">有告警</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">电子屏资源</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>屏名称</th><th>位置/楼栋</th><th>播放节目</th><th>设备状态</th>
+                  <th>权限策略</th><th>告警状态</th><th>最近心跳</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="spControlBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="spControlPager"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title-row"><h2 class="card-title">告警摘要</h2></div>
+          <ul class="sp-alarm-list" id="spAlarmSummary"></ul>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/screen-protect-mock.js"></script>
+  <script>
+    const SP = window.ScreenProtect;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return `<span>-</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = SP.screenMetrics();
+      document.querySelectorAll("#spControlMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+
+    function renderAlarms() {
+      const list = SP.listOpenAlarms(8);
+      const box = document.getElementById("spAlarmSummary");
+      if (!list.length) {
+        box.innerHTML = `<li style="color:var(--text-secondary)">暂无未关闭告警</li>`;
+        return;
+      }
+      box.innerHTML = list.map((e) => `
+        <li>
+          <div>
+            <div>${esc(SP.screenName(e.screenId))} · ${esc(SP.EVENT_TYPE_LABEL[e.eventType] || e.eventType)}</div>
+            <div class="sp-alarm-meta">${dash(e.time)} · ${tagHtml(SP.severityTag(e.severity))}</div>
+          </div>
+          <div>${tagHtml(SP.handleTag(e.handleStatus))}</div>
+        </li>`).join("");
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("spControlPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = SP.listScreens({
+        keyword: f.keyword || undefined,
+        deviceStatus: f.deviceStatus || undefined,
+        alarmStatus: f.alarmStatus || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("spControlBody").innerHTML = pageRows.map((row) => `
+        <tr data-id="${esc(row.id)}">
+          <td>${dash(row.name)}</td>
+          <td>${dash(row.location)}</td>
+          <td>${dash(row.program)}</td>
+          <td>${tagHtml(SP.deviceTag(row.deviceStatus))}</td>
+          <td>${esc(SP.permSummary(row))}</td>
+          <td>${tagHtml(SP.alarmTag(row.alarmStatus))}</td>
+          <td>${dash(row.lastHeartbeat)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            <button class="table-action" type="button" data-row="perm" data-id="${esc(row.id)}">权限配置</button>
+          </td>
+        </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+      renderAlarms();
+    }
+
+    function openDetail(id) {
+      const row = SP.getScreen(id);
+      if (!row) return;
+      const alarms = SP.listOpenAlarms(20).filter((e) => e.screenId === id);
+      const alarmBlock = alarms.length
+        ? `<ul class="sp-alarm-list">${alarms.map((e) => `<li><div>${esc(SP.EVENT_TYPE_LABEL[e.eventType])} · ${dash(e.time)}</div><div>${tagHtml(SP.handleTag(e.handleStatus))}</div></li>`).join("")}</ul>`
+        : `<div style="color:var(--text-secondary)">暂无未关闭告警</div>`;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("屏名称", dash(row.name))}
+            ${infoItem("位置/楼栋", dash(row.location))}
+            ${infoItem("播放节目", dash(row.program))}
+            ${infoItem("设备状态", tagHtml(SP.deviceTag(row.deviceStatus)))}
+            ${infoItem("播放状态", tagHtml(SP.playTag(row.playStatus)))}
+            ${infoItem("告警状态", tagHtml(SP.alarmTag(row.alarmStatus)))}
+            ${infoItem("远程切源", row.permRemoteSwitch ? "允许" : "禁止")}
+            ${infoItem("紧急黑屏", row.permEmergencyBlack ? "允许" : "禁止")}
+            ${infoItem("可操作人/角色", dash(row.permOperators))}
+            ${infoItem("最近心跳", dash(row.lastHeartbeat))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">告警摘要</h3>
+          ${alarmBlock}
+        </section>`;
+      window.openAppDrawer({ title: "电子屏详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openPerm(id) {
+      const row = SP.getScreen(id);
+      if (!row) return;
+      const body = `
+        <label class="switch-line form-item"><span>允许远程切源</span><input type="checkbox" id="permRemote" ${row.permRemoteSwitch ? "checked" : ""}></label>
+        <label class="switch-line form-item"><span>允许紧急黑屏</span><input type="checkbox" id="permBlack" ${row.permEmergencyBlack ? "checked" : ""}></label>
+        <label class="form-field form-item"><span class="form-label">可操作人/角色</span>
+          <input class="form-control" id="permOps" value="${esc(row.permOperators || "")}" placeholder="如 宣传部/信息中心">
+        </label>`;
+      window.openAppDrawer({
+        title: "权限配置",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="perm" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search" || action === "refresh") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "perm") openPerm(rowBtn.dataset.id);
+      }
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (submit?.dataset.drawerSubmit === "perm") {
+        SP.saveScreenPerm(submit.dataset.id, {
+          permRemoteSwitch: document.getElementById("permRemote")?.checked,
+          permEmergencyBlack: document.getElementById("permBlack")?.checked,
+          permOperators: document.getElementById("permOps")?.value.trim(),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

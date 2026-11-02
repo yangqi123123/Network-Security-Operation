@@ -1,0 +1,205 @@
+/* 访问控制：详情内嵌告警/登录/敏感操作小表 */
+.ac-sub-table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+.ac-sub-table th,
+.ac-sub-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+}
+
+.ac-sub-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  background: var(--primary-bg);
+}
+
+.ac-sub-empty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+}
+
+.ac-detail-subsection {
+  margin-top: 16px;
+}
+
+.ac-check-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ac-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.ac-result-box {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--primary-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+/*
+ * 列表工作台：主区锁死在视口高度，仅 .table-wrap 产生滚动。
+ * 必须让 .table-wrap 成为真正的横向/纵向 scrollport，操作列 sticky 才生效。
+ * 对齐桌面安全管理 ds-page。
+ */
+body.ac-page {
+  overflow: hidden;
+}
+
+body.ac-page .app-shell {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+body.ac-page .main {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
+
+body.ac-page .main > .screen-frame.stack {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  overflow: hidden;
+}
+
+body.ac-page .main > .screen-frame.stack > .metric-grid,
+body.ac-page .main > .screen-frame.stack > .filters {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+body.ac-page .user-list-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+body.ac-page .user-list-card > .card-title-row,
+body.ac-page .user-list-card > .pagination {
+  flex: 0 0 auto;
+}
+
+body.ac-page .user-list-card > .table-wrap {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+  position: relative;
+}
+
+body.ac-page .user-list-card .table {
+  width: max-content;
+  min-width: 100%;
+}
+
+body.ac-page .user-list-card .table.table-actions-sticky {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* 表头纵向吸顶 */
+body.ac-page .user-list-card .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+/* 操作列右侧固定（详情｜处置） */
+body.ac-page .user-list-card .table.table-actions-sticky th.user-actions-col,
+body.ac-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+body.ac-page .user-list-card .table.table-actions-sticky th:last-child,
+body.ac-page .user-list-card .table.table-actions-sticky td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  min-width: 160px;
+  background: #fff;
+  box-shadow: -8px 0 12px rgba(26, 28, 31, 0.05);
+}
+
+body.ac-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+body.ac-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  z-index: 5;
+  top: 0;
+  right: 0;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+body.ac-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+body.ac-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: #f7f9ff;
+}
+
+[data-theme="dark"] body.ac-page .user-list-card .table thead th,
+[data-theme="dark"] body.ac-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+[data-theme="dark"] body.ac-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  background: #0a1938;
+}
+
+[data-theme="dark"] body.ac-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+[data-theme="dark"] body.ac-page .user-list-card .table.table-actions-sticky td:last-child {
+  background: var(--bg-card);
+  box-shadow: -8px 0 12px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] body.ac-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+[data-theme="dark"] body.ac-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: rgba(19, 90, 250, 0.12);
+}
+
+/* 分页横向单行 */
+body.ac-page .pagination {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+}
+
+body.ac-page .pagination > span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+body.ac-page .pagination .page-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>网络设备监测 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="pm-page" data-menu-key="network.perf-monitor" data-page-section="性能监测" data-page-title="网络设备监测">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack pm-screen">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">网络设备监测</h1>
+            <p class="page-desc">SNMP 设备发现、性能采集与拓扑预览</p>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" type="button" data-action="report">历史报表</button>
+            <button class="btn btn-secondary" type="button" data-action="discover">自动发现</button>
+            <button class="btn btn-primary" type="button" data-action="add">手动添加</button>
+          </div>
+        </section>
+
+        <section class="card pm-topo-card">
+          <div class="card-title-row">
+            <h2 class="card-title">拓扑预览</h2>
+            <div class="btn-row">
+              <button class="btn btn-ghost" type="button" data-action="topo-refresh">刷新拓扑</button>
+              <button class="btn btn-secondary" type="button" data-action="topo-open">在拓扑中打开</button>
+            </div>
+          </div>
+          <div class="pm-topo" id="pmTopo"></div>
+        </section>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">设备名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">IP</span><input class="form-control" data-filter="ip" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">类型</span>
+              <select class="form-control" data-filter="type">
+                <option value="">全部</option>
+                <option>路由器</option>
+                <option>交换机</option>
+                <option>安全设备</option>
+                <option>负载均衡</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">SNMP</span>
+              <select class="form-control" data-filter="snmpVersion">
+                <option value="">全部</option>
+                <option>V1</option>
+                <option>V2c</option>
+                <option>V3</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="online">在线</option>
+                <option value="alarm">告警</option>
+                <option value="offline">离线</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-title-row"><h2 class="card-title">监控设备</h2></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>名称</th><th>IP</th><th>类型</th><th>SNMP</th><th>Community</th>
+                  <th>CPU%</th><th>内存%</th><th>端口</th><th>可用性</th><th>状态</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="pmTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/perf-monitor-mock.js"></script>
+  <script>
+    (function () {
+      const PM = window.PerfMonitor;
+
+      function statusTag(status) {
+        const map = {
+          online: { text: "在线", cls: "success" },
+          alarm: { text: "告警", cls: "warning" },
+          offline: { text: "离线", cls: "danger" },
+        };
+        const m = map[status] || map.online;
+        return `<span class="tag ${m.cls}">${m.text}</span>`;
+      }
+
+      function currentFilters() {
+        return Object.fromEntries(
+          [...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()])
+        );
+      }
+
+      function renderTable() {
+        const rows = PM.listDevices(currentFilters());
+        document.getElementById("pmTable").innerHTML = rows
+          .map(
+            (d) => `<tr>
+            <td><a class="pm-link" href="perf-device.html?id=${d.id}">${d.name}</a></td>
+            <td>${d.ip}</td><td>${d.type}</td><td>${d.snmpVersion}</td>
+            <td>${d.communityMasked}</td><td>${d.cpu}</td><td>${d.mem}</td>
+            <td>${d.portSummary}</td><td>${d.availability}%</td>
+            <td>${statusTag(d.status)}</td>
+            <td>
+              <button class="table-action" data-row="view" data-id="${d.id}">查看</button>
+              <button class="table-action" data-row="ping" data-id="${d.id}">Ping</button>
+              <button class="table-action" data-row="edit" data-id="${d.id}">编辑</button>
+              <button class="table-action status-danger" data-row="delete" data-id="${d.id}">删除</button>
+            </td>
+          </tr>`
+          )
+          .join("");
+      }
+
+      function renderTopo() {
+        const { nodes, links } = PM.getTopologyPreview();
+        const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
+        const lines = links
+          .map((l) => {
+            const a = nodeMap[l.from];
+            const b = nodeMap[l.to];
+            if (!a || !b) return "";
+            return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#88A0C2" stroke-width="1.5"/>`;
+          })
+          .join("");
+        const dots = nodes
+          .map((n) => {
+            const color = n.status === "offline" ? "#F53F57" : n.status === "alarm" ? "#F7BA1E" : "#14C9BA";
+            return `<g>
+              <circle cx="${n.x}" cy="${n.y}" r="14" fill="${color}"/>
+              <text x="${n.x}" y="${n.y + 32}" text-anchor="middle" fill="currentColor" font-size="11">${n.name.slice(0, 8)}</text>
+            </g>`;
+          })
+          .join("");
+        document.getElementById("pmTopo").innerHTML =
+          `<svg viewBox="0 0 520 220" width="100%" height="220" class="pm-topo-svg">${lines}${dots}</svg>`;
+      }
+
+      function refreshAll() {
+        renderTable();
+        renderTopo();
+      }
+
+      function deviceFormBody(device) {
+        const d = device || {};
+        const types = PM.TYPES.map((t) => `<option ${d.type === t ? "selected" : ""}>${t}</option>`).join("");
+        const snmp = PM.SNMP.map((t) => `<option ${d.snmpVersion === t ? "selected" : ""}>${t}</option>`).join("");
+        return `
+          <label class="form-field form-item"><span class="form-label form-required">设备名称</span>
+            <input class="form-control" id="pmName" value="${d.name || ""}" placeholder="请输入"></label>
+          <label class="form-field form-item"><span class="form-label form-required">IP</span>
+            <input class="form-control" id="pmIpAdd" value="${d.ip || ""}" placeholder="请输入"></label>
+          <label class="form-field form-item"><span class="form-label">类型</span>
+            <select class="form-control" id="pmType">${types}</select></label>
+          <label class="form-field form-item"><span class="form-label form-required">Community</span>
+            <input class="form-control" id="pmCommAdd" value="${d.community || "public"}"></label>
+          <label class="form-field form-item"><span class="form-label">SNMP 版本</span>
+            <select class="form-control" id="pmSnmpAdd">${snmp}</select></label>`;
+      }
+
+      function openAddDrawer(editId) {
+        const device = editId ? PM.getDevice(editId) : null;
+        window.openAppDrawer({
+          title: editId ? "编辑设备" : "手动添加",
+          body: deviceFormBody(device),
+          footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+            <button class="btn btn-primary" type="button" id="pmSaveDevice">确认</button>`,
+        });
+        document.getElementById("pmSaveDevice").onclick = () => {
+          const payload = {
+            name: document.getElementById("pmName").value.trim(),
+            ip: document.getElementById("pmIpAdd").value.trim(),
+            type: document.getElementById("pmType").value,
+            community: document.getElementById("pmCommAdd").value.trim(),
+            snmpVersion: document.getElementById("pmSnmpAdd").value,
+          };
+          if (!payload.ip) return;
+          if (editId) PM.updateDevice(editId, payload);
+          else PM.addDevice(payload);
+          document.querySelector("[data-drawer-close]")?.click();
+          refreshAll();
+        };
+      }
+
+      function openDiscoverDrawer() {
+        const body = `
+          <label class="form-field form-item"><span class="form-label">发现模式</span>
+            <select class="form-control" id="pmMode">
+              <option>全网</option><option>扩展</option><option selected>网段</option><option>按类型</option>
+            </select>
+          </label>
+          <label class="form-field form-item"><span class="form-label form-required">IP / 网段</span>
+            <input class="form-control" id="pmIp" value="192.168.50.0"></label>
+          <label class="form-field form-item"><span class="form-label form-required">Community</span>
+            <input class="form-control" id="pmComm" value="public"></label>
+          <label class="form-field form-item"><span class="form-label">SNMP 版本</span>
+            <select class="form-control" id="pmSnmp"><option>V1</option><option selected>V2c</option><option>V3</option></select>
+          </label>
+          <div id="pmDiscoverResult" class="pm-discover-result"></div>`;
+        window.openAppDrawer({
+          title: "自动发现",
+          body,
+          footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+            <button class="btn btn-secondary" type="button" id="pmRunDiscover">开始发现</button>
+            <button class="btn btn-primary" type="button" id="pmImportDiscover">加入监控</button>`,
+        });
+        let found = [];
+        document.getElementById("pmRunDiscover").onclick = () => {
+          found = PM.discover({
+            mode: document.getElementById("pmMode").value,
+            ip: document.getElementById("pmIp").value,
+            community: document.getElementById("pmComm").value,
+            snmpVersion: document.getElementById("pmSnmp").value,
+          });
+          document.getElementById("pmDiscoverResult").innerHTML = `
+            <table class="table"><thead><tr><th></th><th>名称</th><th>IP</th><th>类型</th></tr></thead>
+            <tbody>${found
+              .map(
+                (r, i) =>
+                  `<tr><td><input type="checkbox" data-di="${i}" checked></td><td>${r.name}</td><td>${r.ip}</td><td>${r.type}</td></tr>`
+              )
+              .join("")}</tbody></table>`;
+        };
+        document.getElementById("pmImportDiscover").onclick = () => {
+          if (!found.length) return;
+          found.forEach((r, i) => {
+            const cb = document.querySelector(`[data-di="${i}"]`);
+            r.selected = !cb || cb.checked;
+          });
+          PM.importDiscovered(found);
+          document.querySelector("[data-drawer-close]")?.click();
+          refreshAll();
+        };
+      }
+
+      document.addEventListener("click", (event) => {
+        const action = event.target.closest("[data-action]")?.dataset.action;
+        if (action === "search") renderTable();
+        if (action === "reset") {
+          document.querySelectorAll("[data-filter]").forEach((el) => (el.value = ""));
+          renderTable();
+        }
+        if (action === "report") location.href = "perf-report.html";
+        if (action === "discover") openDiscoverDrawer();
+        if (action === "add") openAddDrawer();
+        if (action === "topo-refresh") renderTopo();
+        if (action === "topo-open") location.href = "topology.html";
+
+        const row = event.target.closest("[data-row]");
+        if (!row) return;
+        const id = row.dataset.id;
+        if (row.dataset.row === "view") location.href = `perf-device.html?id=${id}`;
+        if (row.dataset.row === "edit") openAddDrawer(id);
+        if (row.dataset.row === "ping") {
+          const result = PM.runTool(id, "ping");
+          window.openAppDrawer({
+            title: result.title,
+            body: `<pre class="pm-pre">${result.text}</pre>`,
+            footer: `<button class="btn btn-primary" type="button" data-drawer-close>关闭</button>`,
+          });
+        }
+        if (row.dataset.row === "delete") {
+          window.openAppConfirm({
+            title: "删除设备",
+            message: "确认从监控中移除该设备？",
+            onConfirm: () => {
+              PM.removeDevice(id);
+              refreshAll();
+            },
+          });
+        }
+      });
+
+      refreshAll();
+    })();
+  </script>
+</body>
+</html>

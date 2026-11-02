@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>故障显示 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body class="fault-page" data-menu-key="network.fault" data-page-section="网络管理" data-page-title="故障显示">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack fault-screen">
+        <section class="fault-card fault-platform-filters">
+          <div class="fault-filter-row">
+            <label class="form-field">
+              <span class="form-label">区域</span>
+              <select class="form-control" id="filterRegion">
+                <option value="">全部区域</option>
+              </select>
+            </label>
+            <label class="form-field">
+              <span class="form-label">网络分层</span>
+              <select class="form-control" id="filterLayer">
+                <option value="">全部分层</option>
+                <option value="核心层">核心层</option>
+                <option value="汇聚层">汇聚层</option>
+                <option value="接入层">接入层</option>
+              </select>
+            </label>
+            <label class="form-field">
+              <span class="form-label">告警等级</span>
+              <select class="form-control" id="filterLevel">
+                <option value="">全部等级</option>
+                <option value="告警">告警</option>
+                <option value="预警">预警</option>
+                <option value="提醒">提醒</option>
+              </select>
+            </label>
+            <label class="form-field">
+              <span class="form-label">监控探针</span>
+              <input class="form-control" id="filterProbe" placeholder="如：华东核心探针">
+            </label>
+            <div class="fault-filter-actions">
+              <button class="btn btn-secondary" type="button" id="btnFilterReset">重置</button>
+              <button class="btn btn-primary" type="button" id="btnFilterSearch">搜索</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 网络告警拓扑图（替换原三指标卡片） -->
+        <section class="fault-card">
+          <div class="fault-card-head">
+            <h3>网络告警拓扑图</h3>
+            <span class="fault-platform-hint">跨地域探针分层监控 · 节点告警数醒目展示 · 点击节点进入设备详情</span>
+          </div>
+          <div class="fault-alarm-topo" id="alarmTopo">
+            <div class="fault-alarm-topo-legend">
+              <span><i class="dot critical"></i>告警</span>
+              <span><i class="dot major"></i>预警</span>
+              <span><i class="dot info"></i>提醒/正常</span>
+              <span><i class="fa-solid fa-satellite-dish"></i> 监控探针</span>
+            </div>
+            <div class="fault-alarm-topo-canvas" id="alarmTopoCanvas"></div>
+          </div>
+        </section>
+
+        <section class="fault-split-row fault-analysis-row">
+          <article class="fault-card">
+            <div class="fault-card-head"><h3>告警台事件分析</h3></div>
+            <div id="analysisPie" class="fault-analysis-chart"></div>
+          </article>
+          <article class="fault-card">
+            <div class="fault-card-head"><h3>区域 / 探针汇聚</h3></div>
+            <div id="analysisBar" class="fault-analysis-chart"></div>
+          </article>
+        </section>
+
+        <section class="fault-card">
+          <div class="fault-card-head">
+            <h3>统一实时告警台</h3>
+            <span class="fault-platform-hint">与「告警通知」同源数据 · 点击行进入设备详情二级页</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table fault-platform-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>等级</th>
+                  <th>设备</th>
+                  <th>告警内容</th>
+                  <th>区域</th>
+                  <th>分层</th>
+                  <th>探针</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="platformAlarmBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script>
+    (function () {
+      const FA = window.FaultAlarm;
+      const ALL = FA.alarmsForFaultDisplay();
+      let pieChart = null;
+      let barChart = null;
+
+      function esc(text) {
+        return String(text == null ? "" : text)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function levelClass(level) {
+        if (level === "告警") return "high";
+        if (level === "预警") return "medium";
+        return "low";
+      }
+
+      function statusClass(status) {
+        return status === "未处理" ? "active" : status === "处理中" ? "processing" : "processed";
+      }
+
+      function fillRegionOptions() {
+        const sel = document.getElementById("filterRegion");
+        const regions = Array.from(new Set(ALL.map((a) => a.region))).filter(Boolean);
+        regions.forEach((r) => {
+          const opt = document.createElement("option");
+          opt.value = r;
+          opt.textContent = r;
+          sel.appendChild(opt);
+        });
+      }
+
+      function filteredAlarms() {
+        const region = document.getElementById("filterRegion").value;
+        const layer = document.getElementById("filterLayer").value;
+        const level = document.getElementById("filterLevel").value;
+        const probe = (document.getElementById("filterProbe").value || "").trim();
+        return ALL.filter((item) => {
+          if (region && item.region !== region) return false;
+          if (layer && item.layer !== layer) return false;
+          if (level && item.level !== level) return false;
+          if (probe && String(item.probe).indexOf(probe) < 0) return false;
+          return true;
+        });
+      }
+
+      function deviceDetailUrl(item) {
+        const qs = new URLSearchParams({
+          id: item.deviceId || item.deviceCode || String(item.id),
+          alarmId: String(item.id),
+          name: item.device,
+          ip: item.ip || "-",
+          region: item.region || "",
+          layer: item.layer || "",
+          probe: item.probe || "",
+        });
+        return `./device-detail.html?${qs.toString()}`;
+      }
+
+      function renderTable() {
+        const rows = filteredAlarms();
+        document.getElementById("platformAlarmBody").innerHTML = rows.map((item) => `
+          <tr class="fault-platform-row" data-href="${esc(deviceDetailUrl(item))}">
+            <td>${esc(item.time)}</td>
+            <td><span class="alarm-level ${levelClass(item.level)}">${esc(item.level)}</span></td>
+            <td>${esc(item.device)}<div class="muted" style="font-size:12px">${esc(item.ip || "-")}</div></td>
+            <td>${esc(item.message)}</td>
+            <td>${esc(item.region || "-")}</td>
+            <td>${esc(item.layer || "-")}</td>
+            <td>${esc(item.probe || "-")}</td>
+            <td><span class="alarm-state ${statusClass(item.status)}">${esc(item.status)}</span></td>
+            <td><a class="table-action" href="${esc(deviceDetailUrl(item))}">设备详情</a>
+              <a class="table-action" href="../alarm-center/alarm-info.html">告警通知</a></td>
+          </tr>
+        `).join("") || '<tr><td colspan="9">暂无告警</td></tr>';
+      }
+
+      function buildTopoModel(list) {
+        const layers = ["核心层", "汇聚层", "接入层"];
+        const regions = Array.from(new Set(list.map((a) => a.region).filter(Boolean)));
+        const useRegions = regions.length ? regions : ["华东一区", "华南二区", "西南三区"];
+        // 列宽 / 节点间距需大于节点文案宽度，避免标签挤叠
+        const COL_W = 360;
+        const LEFT0 = 96;
+        const NODE_W = 108;
+        const NODE_GAP = 118;
+        const ROW_H = 132;
+        const TOP0 = 78;
+        const nodes = [];
+
+        function placeX(ri, count, index) {
+          const colLeft = LEFT0 + ri * COL_W;
+          const totalW = count * NODE_W + Math.max(0, count - 1) * (NODE_GAP - NODE_W);
+          const start = colLeft + Math.max(0, (COL_W - 24 - totalW) / 2);
+          return start + index * NODE_GAP;
+        }
+
+        useRegions.forEach((region, ri) => {
+          layers.forEach((layer, li) => {
+            const bucket = list.filter((a) => a.region === region && a.layer === layer);
+            const byDevice = {};
+            bucket.forEach((a) => {
+              const key = a.deviceId || a.device;
+              if (!byDevice[key]) {
+                byDevice[key] = {
+                  id: key,
+                  name: a.device,
+                  region,
+                  layer,
+                  probe: a.probe,
+                  count: 0,
+                  worst: "提醒",
+                  sample: a,
+                };
+              }
+              byDevice[key].count += 1;
+              if (a.level === "告警") byDevice[key].worst = "告警";
+              else if (a.level === "预警" && byDevice[key].worst !== "告警") byDevice[key].worst = "预警";
+            });
+            const devices = Object.values(byDevice).slice(0, 3);
+            const y = TOP0 + li * ROW_H;
+            if (!devices.length) {
+              nodes.push({
+                id: `${region}-${layer}-empty`,
+                name: `${layer}节点`,
+                region,
+                layer,
+                probe: `${region.slice(0, 2)}探针`,
+                count: 0,
+                worst: "正常",
+                empty: true,
+                x: placeX(ri, 1, 0),
+                y,
+              });
+            } else {
+              devices.forEach((d, di) => {
+                nodes.push({
+                  ...d,
+                  x: placeX(ri, devices.length, di),
+                  y,
+                });
+              });
+            }
+          });
+        });
+        return { regions: useRegions, layers, nodes, COL_W, LEFT0, ROW_H, TOP0 };
+      }
+
+      function toneClass(worst) {
+        if (worst === "告警") return "is-critical";
+        if (worst === "预警") return "is-major";
+        if (worst === "正常") return "is-ok";
+        return "is-info";
+      }
+
+      function shortName(name) {
+        const s = String(name || "");
+        return s.length > 10 ? `${s.slice(0, 9)}…` : s;
+      }
+
+      function renderAlarmTopo() {
+        const list = filteredAlarms();
+        const model = buildTopoModel(list);
+        const canvas = document.getElementById("alarmTopoCanvas");
+        const width = Math.max(980, model.LEFT0 + model.regions.length * model.COL_W + 40);
+        const height = model.TOP0 + model.layers.length * model.ROW_H + 36;
+
+        const layerLines = model.layers.map((layer, li) => {
+          const y = model.TOP0 + li * model.ROW_H;
+          return `<div class="fault-topo-layer-label" style="top:${y - 8}px">${esc(layer)}</div>
+            <div class="fault-topo-layer-line" style="top:${y + 52}px"></div>`;
+        }).join("");
+
+        const regionHeads = model.regions.map((region, ri) => {
+          const probes = Array.from(new Set(list.filter((a) => a.region === region).map((a) => a.probe))).filter(Boolean);
+          return `<div class="fault-topo-region" style="left:${model.LEFT0 + ri * model.COL_W}px;width:${model.COL_W - 24}px">
+            <strong>${esc(region)}</strong>
+            <small><i class="fa-solid fa-satellite-dish"></i> ${esc(probes[0] || "分布式探针")}</small>
+          </div>`;
+        }).join("");
+
+        const nodeHtml = model.nodes.map((n) => {
+          const href = n.empty ? "#" : deviceDetailUrl(n.sample || {
+            id: n.id, deviceId: n.id, device: n.name, ip: "-", region: n.region, layer: n.layer, probe: n.probe, message: "",
+          });
+          return `<a class="fault-topo-node ${toneClass(n.worst)} ${n.empty ? "is-empty" : ""}"
+              href="${n.empty ? "#" : esc(href)}"
+              style="left:${n.x}px;top:${n.y}px"
+              title="${esc(n.name)}｜${esc(n.region)}｜${esc(n.layer)}｜告警${n.count}">
+              <span class="icon"><i class="fa-solid fa-network-wired"></i></span>
+              ${n.count ? `<span class="badge">${n.count}</span>` : ""}
+              <span class="name">${esc(shortName(n.name))}</span>
+            </a>`;
+        }).join("");
+
+        canvas.style.minWidth = width + "px";
+        canvas.style.height = height + "px";
+        canvas.innerHTML = layerLines + regionHeads + nodeHtml;
+      }
+
+      function renderAnalysis() {
+        const list = filteredAlarms();
+        const byLevel = { 告警: 0, 预警: 0, 提醒: 0 };
+        const byRegion = {};
+        list.forEach((a) => {
+          byLevel[a.level] = (byLevel[a.level] || 0) + 1;
+          byRegion[a.region || "未分区"] = (byRegion[a.region || "未分区"] || 0) + 1;
+        });
+
+        if (!pieChart) pieChart = echarts.init(document.getElementById("analysisPie"));
+        if (!barChart) barChart = echarts.init(document.getElementById("analysisBar"));
+
+        pieChart.setOption(FA.pieOption(
+          Object.keys(byLevel).map((name) => ({ name, value: byLevel[name] })),
+          ["#F53F57", "#F7BA1E", "#5B83FF"]
+        ), true);
+
+        barChart.setOption(FA.barOption(
+          Object.keys(byRegion).map((name) => ({ name, value: byRegion[name] }))
+        ), true);
+      }
+
+      function refreshAll() {
+        renderAlarmTopo();
+        renderAnalysis();
+        renderTable();
+      }
+
+      document.getElementById("platformAlarmBody").addEventListener("click", (e) => {
+        const row = e.target.closest("tr[data-href]");
+        if (!row || e.target.closest("a")) return;
+        location.href = row.dataset.href;
+      });
+
+      document.getElementById("btnFilterSearch").addEventListener("click", refreshAll);
+      document.getElementById("btnFilterReset").addEventListener("click", () => {
+        document.getElementById("filterRegion").value = "";
+        document.getElementById("filterLayer").value = "";
+        document.getElementById("filterLevel").value = "";
+        document.getElementById("filterProbe").value = "";
+        refreshAll();
+      });
+      ["filterRegion", "filterLayer", "filterLevel"].forEach((id) => {
+        document.getElementById(id).addEventListener("change", refreshAll);
+      });
+
+      window.addEventListener("resize", () => {
+        pieChart && pieChart.resize();
+        barChart && barChart.resize();
+      });
+
+      fillRegionOptions();
+      refreshAll();
+    })();
+  </script>
+</body>
+</html>

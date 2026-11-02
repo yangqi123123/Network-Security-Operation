@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据流转风险预警 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/data-security.css">
+</head>
+<body class="dsec-page" data-menu-key="data.flow" data-page-section="数据安全管理" data-page-title="数据流转风险预警">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsecFlMetrics">
+          <article class="metric-card"><div class="metric-label">今日流转事件</div><div class="metric-number" data-m="today">0</div></article>
+          <article class="metric-card"><div class="metric-label">高危外发</div><div class="metric-number" data-m="highOutbound">0</div></article>
+          <article class="metric-card"><div class="metric-label">待审批放行</div><div class="metric-number" data-m="pendingApprove">0</div></article>
+          <article class="metric-card"><div class="metric-label">已阻断</div><div class="metric-number" data-m="blocked">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <p class="dsec-filter-tip" id="labelFilterTip" hidden>已按敏感标签筛选 <a data-action="clear-label">清除</a></p>
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">通道类型</span>
+              <select class="form-control" data-filter="channel"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">数据等级</span>
+              <select class="form-control" data-filter="level">
+                <option value="">全部</option>
+                <option value="L1">公开</option>
+                <option value="L2">内部</option>
+                <option value="L3">敏感</option>
+                <option value="L4">机密</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">用户/角色</span>
+              <input class="form-control" data-filter="role" placeholder="角色关键字">
+            </label>
+            <label class="form-field"><span class="form-label">终端分组</span>
+              <select class="form-control" data-filter="hostGroup"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">严重性</span>
+              <select class="form-control" data-filter="severity">
+                <option value="">全部</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+                <option value="critical">严重</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">开始日期</span>
+              <input class="form-control" data-filter="dateFrom" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">结束日期</span>
+              <input class="form-control" data-filter="dateTo" placeholder="2026-11-01">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">流转事件列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="policy"><i class="fa-solid fa-sliders"></i> 策略动作示意</button>
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>时间</th><th>主体</th><th>通道</th><th>源位置</th><th>目标</th>
+                  <th>标签/等级</th><th>严重性</th><th>策略动作</th><th>处置状态</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsecFlBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsecFlPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/data-security-mock.js"></script>
+  <script>
+    const DS = window.DataSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+    const params = new URLSearchParams(location.search);
+    let labelIdFilter = params.get("labelId") || "";
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function effectiveAction(row) {
+      return row.policyAction || DS.resolvePolicyAction(row.level, row.channel);
+    }
+
+    function labelLevelCell(row) {
+      const names = (row.labelIds || []).map((id) => {
+        const lb = DS.getLabel(id);
+        return lb ? lb.category : id;
+      }).filter(Boolean);
+      const level = DS.levelTag(row.level);
+      const text = names.length ? names.slice(0, 2).join("、") : "-";
+      return `${esc(text)} / ${tagHtml(level)}`;
+    }
+
+    function fillFilters() {
+      const chSel = document.querySelector("[data-filter='channel']");
+      chSel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.CHANNEL_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const groups = [...new Set(DS.listFlowEvents().map((e) => e.hostGroup).filter(Boolean))];
+      const gSel = document.querySelector("[data-filter='hostGroup']");
+      gSel.innerHTML = '<option value="">全部</option>' + groups.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
+      document.getElementById("labelFilterTip").hidden = !labelIdFilter;
+    }
+
+    function readFilter() {
+      const f = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      if (labelIdFilter) f.labelId = labelIdFilter;
+      return f;
+    }
+
+    function refreshMetrics() {
+      const m = DS.flowMetrics();
+      document.querySelectorAll("#dsecFlMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsecFlPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = DS.listFlowEvents({
+        channel: f.channel || undefined,
+        level: f.level || undefined,
+        role: f.role || undefined,
+        hostGroup: f.hostGroup || undefined,
+        severity: f.severity || undefined,
+        dateFrom: f.dateFrom || undefined,
+        dateTo: f.dateTo || undefined,
+        labelId: f.labelId || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dsecFlBody").innerHTML = pageRows.map((row) => {
+        const action = effectiveAction(row);
+        const handleBtn = row.handleStatus === "open"
+          ? `<button class="table-action" type="button" data-row="handle" data-id="${esc(row.id)}">处置</button>`
+          : "";
+        return `<tr>
+          <td>${dash(row.time)}</td>
+          <td>${dash(row.subject)}</td>
+          <td>${dash(DS.CHANNEL_LABEL[row.channel] || row.channel)}</td>
+          <td>${dash(row.source)}</td>
+          <td>${dash(row.target)}</td>
+          <td>${labelLevelCell(row)}</td>
+          <td>${tagHtml(DS.severityTag(row.severity))}</td>
+          <td>${tagHtml(DS.policyActionTag(action))}</td>
+          <td>${tagHtml(DS.flowHandleTag(row.handleStatus))}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            ${handleBtn}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function pathHtml(path) {
+      const nodes = Array.isArray(path) ? path : [];
+      if (!nodes.length) return "-";
+      return `<div class="dsec-path">${nodes.map((n, i) => {
+        const arrow = i < nodes.length - 1 ? '<span class="dsec-path-arrow">→</span>' : "";
+        return `<span class="dsec-path-node">${esc(n)}</span>${arrow}`;
+      }).join("")}</div>`;
+    }
+
+    function openDetail(id) {
+      const row = DS.getFlowEvent(id);
+      if (!row) return;
+      const action = effectiveAction(row);
+      const labels = (row.labelIds || []).map((lid) => {
+        const lb = DS.getLabel(lid);
+        const text = lb ? `${lb.category}(${DS.levelTag(lb.level).label})` : lid;
+        return `<a href="./classify.html?labelId=${encodeURIComponent(lid)}" style="color:var(--primary)">${esc(text)}</a>`;
+      }).join("、") || "-";
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">流转路径</h3>
+          ${pathHtml(row.path)}
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">事件信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("时间", dash(row.time))}
+            ${infoItem("主体", dash(row.subject))}
+            ${infoItem("角色", dash(row.role))}
+            ${infoItem("终端分组", dash(row.hostGroup))}
+            ${infoItem("通道", dash(DS.CHANNEL_LABEL[row.channel] || row.channel))}
+            ${infoItem("源位置", dash(row.source))}
+            ${infoItem("外发目标", dash(row.target))}
+            ${infoItem("场景摘要", dash(row.summary))}
+            ${infoItem("数据标签", labels)}
+            ${infoItem("数据等级", tagHtml(DS.levelTag(row.level)))}
+            ${infoItem("严重性", tagHtml(DS.severityTag(row.severity)))}
+            ${infoItem("策略动作", tagHtml(DS.policyActionTag(action)))}
+            ${infoItem("处置状态", tagHtml(DS.flowHandleTag(row.handleStatus)))}
+            ${infoItem("关联审计", dash(row.linkedAuditId))}
+            ${infoItem("关联事件号", dash(row.linkedEventId))}
+            ${infoItem("备注信息", dash(row.remark))}
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "流转事件详情",
+        subtitle: "数据安全管理 · 数据流转风险预警",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>',
+      });
+    }
+
+    function openHandle(id) {
+      const row = DS.getFlowEvent(id);
+      if (!row) return;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">处置动作</h3>
+          <div class="form-item"><label class="form-label form-required">处置方式</label>
+            <select class="form-control" id="handleAction">
+              <option value="reminded">提醒确认</option>
+              <option value="approved">审批放行</option>
+              <option value="blocked">阻断</option>
+              <option value="evented">生成事件</option>
+              <option value="closed">关闭</option>
+            </select>
+          </div>
+          <div class="form-item"><label class="form-label">备注</label>
+            <textarea class="form-control textarea" id="handleRemark" placeholder="请输入处置说明"></textarea>
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "流转风险处置",
+        subtitle: (DS.CHANNEL_LABEL[row.channel] || "") + " · " + (row.summary || ""),
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="confirmHandle">确认</button>`,
+      });
+      setTimeout(() => {
+        document.getElementById("confirmHandle")?.addEventListener("click", () => {
+          DS.handleFlowEvent(id, {
+            action: document.getElementById("handleAction").value,
+            remark: document.getElementById("handleRemark").value.trim(),
+          });
+          document.querySelector("[data-drawer-close]")?.click();
+          render();
+        });
+      }, 0);
+    }
+
+    function openPolicy() {
+      const policies = DS.listFlowPolicies();
+      const actionOpts = Object.entries(DS.POLICY_ACTION_META).map(([k, v]) => `<option value="${esc(k)}">${esc(v.label)}</option>`).join("");
+      const rows = policies.map((p) => `
+        <tr>
+          <td>${tagHtml(DS.levelTag(p.level))}</td>
+          <td>${dash(DS.CHANNEL_LABEL[p.channel] || p.channel)}</td>
+          <td>
+            <select class="form-control" data-policy-id="${esc(p.id)}" data-level="${esc(p.level)}" data-channel="${esc(p.channel)}">
+              ${Object.entries(DS.POLICY_ACTION_META).map(([k, v]) => `<option value="${esc(k)}" ${p.action === k ? "selected" : ""}>${esc(v.label)}</option>`).join("")}
+            </select>
+          </td>
+        </tr>`).join("");
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">按等级 × 通道配置默认动作</h3>
+          <p class="dsec-evidence" style="margin-bottom:12px">保存后，未写死动作的流转事件将按此解析展示（原型演示）。</p>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>数据等级</th><th>通道</th><th>动作</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <div class="form-item" style="margin-top:16px">
+            <label class="form-label">新增策略</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <select class="form-control" id="newLevel" style="width:120px">
+                <option value="L1">公开</option><option value="L2">内部</option>
+                <option value="L3" selected>敏感</option><option value="L4">机密</option>
+              </select>
+              <select class="form-control" id="newChannel" style="width:140px">
+                ${Object.entries(DS.CHANNEL_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("")}
+              </select>
+              <select class="form-control" id="newAction" style="width:140px">${actionOpts}</select>
+            </div>
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "策略动作示意",
+        subtitle: "数据安全管理 · 数据流转风险预警",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="confirmPolicy">保存</button>`,
+      });
+      setTimeout(() => {
+        document.getElementById("confirmPolicy")?.addEventListener("click", () => {
+          document.querySelectorAll("[data-policy-id]").forEach((sel) => {
+            DS.saveFlowPolicy({
+              id: sel.dataset.policyId,
+              level: sel.dataset.level,
+              channel: sel.dataset.channel,
+              action: sel.value,
+            });
+          });
+          DS.saveFlowPolicy({
+            level: document.getElementById("newLevel").value,
+            channel: document.getElementById("newChannel").value,
+            action: document.getElementById("newAction").value,
+          });
+          document.querySelector("[data-drawer-close]")?.click();
+          render();
+        });
+      }, 0);
+    }
+
+    fillFilters();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        labelIdFilter = "";
+        document.getElementById("labelFilterTip").hidden = true;
+        history.replaceState(null, "", location.pathname);
+        currentPage = 1;
+        render();
+      }
+      if (action === "clear-label") {
+        labelIdFilter = "";
+        document.getElementById("labelFilterTip").hidden = true;
+        history.replaceState(null, "", location.pathname);
+        currentPage = 1;
+        render();
+      }
+      if (action === "refresh") render();
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "policy") openPolicy();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "handle") openHandle(rowBtn.dataset.id);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

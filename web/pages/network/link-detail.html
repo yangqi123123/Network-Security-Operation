@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>链路详情 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="lm-page" data-menu-key="network.topology" data-page-section="网络管理" data-page-title="链路详情">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame">
+        <div class="lm-page-nav" style="justify-content:flex-end">
+          <a class="btn btn-secondary" href="./topology.html"><i class="fa-solid fa-arrow-left"></i> 返回拓扑</a>
+        </div>
+
+        <div class="lm-endpoint-grid">
+          <div id="sourceCard"></div>
+          <div id="targetCard"></div>
+        </div>
+
+        <div id="lmStrip"></div>
+        <div id="lmInfo"></div>
+
+        <h2 class="lm-section-title" id="sourceTitle">起点资源</h2>
+        <div class="lm-chart-grid" id="sourceCharts"></div>
+        <div id="targetBlock" hidden>
+          <h2 class="lm-section-title" id="targetTitle">终点资源</h2>
+          <div class="lm-chart-grid" id="targetCharts"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/link-monitor-mock.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const linkId = params.get("id") || "L001";
+    let link = window.LinkMonitor.getLink(linkId);
+    const sourceCharts = [];
+    const targetCharts = [];
+
+    function paint() {
+      window.LinkMonitor.renderEndpointCard(document.getElementById("sourceCard"), link.source, "起点信息", {
+        onEdit: (key) => editEndpoint("source", key),
+        onMore: showAlarmMore,
+      });
+      window.LinkMonitor.renderEndpointCard(document.getElementById("targetCard"), link.target, "终点信息", {
+        onEdit: (key) => editEndpoint("target", key),
+        onMore: showAlarmMore,
+      });
+      window.LinkMonitor.applyStatus(link);
+      window.LinkMonitor.renderLinkStrip(document.getElementById("lmStrip"), link);
+      window.LinkMonitor.renderLinkInfo(document.getElementById("lmInfo"), link, {
+        onToggleLock: (locked) => { link.locked = locked; paint(); },
+        onEditLink: openLinkEditDrawer,
+        onThresholds: openThresholdDrawer,
+      });
+      document.getElementById("sourceTitle").textContent = `起点资源-${link.source.ifName || "—"}`;
+      window.LinkMonitor.renderMetricCharts(
+        document.getElementById("sourceCharts"),
+        link.sourceMetrics,
+        echarts,
+        sourceCharts
+      );
+
+      const targetBlock = document.getElementById("targetBlock");
+      if (link.target.ifName && link.targetMetrics?.length) {
+        targetBlock.hidden = false;
+        document.getElementById("targetTitle").textContent = `终点资源-${link.target.ifName}`;
+        window.LinkMonitor.renderMetricCharts(
+          document.getElementById("targetCharts"),
+          link.targetMetrics,
+          echarts,
+          targetCharts
+        );
+      } else {
+        targetBlock.hidden = true;
+        targetCharts.forEach((c) => c.dispose?.());
+        targetCharts.length = 0;
+      }
+
+    }
+
+    function showAlarmMore(alarm) {
+      if (!alarm) {
+        window.openAppDrawer({
+          title: "告警详情",
+          body: `<div class="lm-empty"><p>暂无数据</p></div>`,
+          footer: `<button class="btn btn-primary" type="button" data-drawer-close>关闭</button>`,
+        });
+        return;
+      }
+      window.openAppDrawer({
+        title: "告警详情",
+        body: `<div class="detail-grid">
+          <div class="info-item"><span class="info-label">时间</span><span class="info-value">${alarm.time}</span></div>
+          <div class="info-item"><span class="info-label">对象</span><span class="info-value">${alarm.scope} ${alarm.device}</span></div>
+          <div class="info-item"><span class="info-label">内容</span><span class="info-value" style="color:#f53f3f">${alarm.content}</span></div>
+        </div>`,
+        footer: `<button class="btn btn-primary" type="button" data-drawer-close>关闭</button>`,
+      });
+    }
+
+    function refreshAll() {
+      window.LinkMonitor.refreshMetrics(link);
+      if (link.status === "down") {
+        link.realtimeIn = Number((Number(link.realtimeIn || 1) * (0.92 + Math.random() * 0.16)).toFixed(2));
+        link.realtimeOut = Number((Number(link.realtimeOut || 1) * (0.92 + Math.random() * 0.16)).toFixed(2));
+      }
+      paint();
+    }
+
+    function openThresholdDrawer() {
+      const global = window.LinkMonitor.loadGlobalThresholds();
+      const current = window.LinkMonitor.resolveThresholds(link, global);
+      const useOverride = !!link.thresholds;
+      window.openAppDrawer({
+        title: "链路性能指标设置",
+        body: `
+          <p class="helper-text">按总流量与带宽利用率设定告警/严重线，两项取更差档决定链路颜色。</p>
+          <label class="switch-line"><span>保存到本链路（勾选=覆盖全局；不勾选=写全局默认）</span><input type="checkbox" id="useOverride" ${useOverride ? "checked" : ""}></label>
+          <div class="form-grid-2" id="thForm">
+            <label class="form-field form-item"><span class="form-label">利用率告警线 (%)</span><input class="form-control" data-th="utilWarn" type="number" value="${current.utilWarn}"></label>
+            <label class="form-field form-item"><span class="form-label">利用率严重线 (%)</span><input class="form-control" data-th="utilCritical" type="number" value="${current.utilCritical}"></label>
+            <label class="form-field form-item"><span class="form-label">总流量告警线 (Mbps)</span><input class="form-control" data-th="trafficWarn" type="number" value="${current.trafficWarn}"></label>
+            <label class="form-field form-item"><span class="form-label">总流量严重线 (Mbps)</span><input class="form-control" data-th="trafficCritical" type="number" value="${current.trafficCritical}"></label>
+          </div>
+          <button class="btn btn-ghost" type="button" id="clearOverride" style="margin-top:12px">清除本链路覆盖，恢复全局</button>
+        `,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" id="saveTh">保存</button>`,
+      });
+      const form = document.getElementById("thForm");
+      document.getElementById("clearOverride").addEventListener("click", () => {
+        delete link.thresholds;
+        window.LinkMonitor.applyStatus(link);
+        window.closeAppDrawer();
+        paint();
+      });
+      document.getElementById("saveTh").addEventListener("click", () => {
+        const next = Object.fromEntries([...form.querySelectorAll("[data-th]")].map((el) => [el.dataset.th, Number(el.value)]));
+        if (document.getElementById("useOverride").checked) {
+          link.thresholds = next;
+        } else {
+          delete link.thresholds;
+          window.LinkMonitor.saveGlobalThresholds(next);
+        }
+        window.LinkMonitor.applyStatus(link);
+        window.closeAppDrawer();
+        paint();
+      });
+    }
+
+    function openLinkEditDrawer() {
+      const types = window.LinkMonitor.LINK_TYPES
+        .map((t) => `<option value="${t}" ${link.type === t ? "selected" : ""}>${t}</option>`)
+        .join("");
+      const via = (link.viaDevices || []).join("、");
+      window.openAppDrawer({
+        title: "链路编辑",
+        body: `
+          <div class="form-grid-2">
+            <label class="form-field form-item"><span class="form-label">链路名称</span><input class="form-control" id="fName" value="${(link.name || "").replace(/"/g, "&quot;")}" placeholder="请输入"></label>
+            <label class="form-field form-item"><span class="form-label">链路类型</span><select class="form-control" id="fType">${types}</select></label>
+            <label class="form-field form-item"><span class="form-label">备注信息</span><input class="form-control" id="fRemark" value="${(link.remark || "").replace(/"/g, "&quot;")}" placeholder="请输入"></label>
+            <label class="form-field form-item"><span class="form-label">链路带宽</span><input class="form-control" id="fBandwidth" value="${(link.bandwidth || "").replace(/"/g, "&quot;")}" placeholder="如 1000 Mbps"></label>
+            <label class="form-field form-item"><span class="form-label">途经设备</span><input class="form-control" id="fVia" value="${via.replace(/"/g, "&quot;")}" placeholder="无则留空"></label>
+            <label class="form-field form-item"><span class="form-label">总流量 (Mbps)</span><input class="form-control" id="fTraffic" type="number" value="${link.totalTrafficMbps ?? ""}" placeholder="用于颜色判定"></label>
+          </div>
+          <label class="form-field form-item"><span class="form-label">链路描述</span><textarea class="form-control textarea" id="fDesc" placeholder="请输入">${link.desc || ""}</textarea></label>
+        `,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" id="saveLinkEdit">确认</button>`,
+      });
+      document.getElementById("saveLinkEdit").addEventListener("click", () => {
+        link.name = document.getElementById("fName").value.trim();
+        link.type = document.getElementById("fType").value;
+        link.remark = document.getElementById("fRemark").value.trim();
+        link.bandwidth = document.getElementById("fBandwidth").value.trim() || link.bandwidth;
+        const viaVal = document.getElementById("fVia").value.trim();
+        link.viaDevices = viaVal && viaVal !== "无" ? viaVal.split(/[,，、]/).map((s) => s.trim()).filter(Boolean) : [];
+        link.totalTrafficMbps = Number(document.getElementById("fTraffic").value) || 0;
+        link.desc = document.getElementById("fDesc").value.trim() || "无";
+        window.LinkMonitor.applyStatus(link);
+        window.closeAppDrawer();
+        paint();
+      });
+    }
+
+    function editEndpoint(role, key) {
+      const ep = link[role];
+      const labels = {
+        deviceName: "设备", ifName: "资源", slotNo: "槽口号", ifNo: "接口号", moduleNo: "模块号",
+      };
+      window.openAppDrawer({
+        title: `编辑${labels[key] || key}`,
+        body: `<label class="form-field form-item"><span class="form-label">${labels[key]}</span><input class="form-control" id="lmEpVal" value="${String(ep[key] ?? "").replace(/"/g, "&quot;")}"></label>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" id="lmSaveEp">确认</button>`,
+      });
+      document.getElementById("lmSaveEp").addEventListener("click", () => {
+        ep[key] = document.getElementById("lmEpVal").value.trim() || "无";
+        window.closeAppDrawer();
+        paint();
+      });
+    }
+
+    paint();
+    window.addEventListener("resize", () => {
+      sourceCharts.forEach((c) => c.resize());
+      targetCharts.forEach((c) => c.resize());
+    });
+  </script>
+</body>
+</html>

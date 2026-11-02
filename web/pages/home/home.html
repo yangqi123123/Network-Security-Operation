@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工作台 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body data-menu-key="home" data-page-section="网络安全运维管理平台" data-page-title="工作台">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div></div>
+          <div class="btn-row">
+            <a class="btn btn-secondary" href="../security-ops/screen.html" target="_blank" rel="noopener">
+              <i class="fa-solid fa-display"></i> 安全态势大屏
+            </a>
+            <button class="btn btn-primary" type="button" data-open-ticket>
+              <i class="fa-solid fa-plus"></i> 新建安全工单
+            </button>
+          </div>
+        </section>
+
+        <section class="metric-grid home-kpi-grid" id="homeKpis"></section>
+
+        <section class="home-chart-grid" id="homeCharts"></section>
+
+        <section class="home-panel-grid">
+          <article class="card pad home-panel-card">
+            <div class="card-title-row">
+              <h2 class="card-title">威胁与告警</h2>
+              <a class="btn btn-ghost" id="threatMore" href="../alarm-center/alarm-info.html">更多 ›</a>
+            </div>
+            <div class="home-panel-summary" id="alarmSummary"></div>
+            <div class="home-list" id="alarmList"></div>
+          </article>
+
+          <article class="card pad home-panel-card">
+            <div class="card-title-row">
+              <h2 class="card-title">资产与脆弱性</h2>
+              <a class="btn btn-ghost" id="vulnMore" href="../asset/vuln.html">更多 ›</a>
+            </div>
+            <div class="home-panel-summary" id="vulnSummary"></div>
+            <div class="home-list" id="vulnList"></div>
+          </article>
+
+          <article class="card pad home-panel-card">
+            <div class="card-title-row">
+              <h2 class="card-title">运营待办</h2>
+              <a class="btn btn-ghost" id="todoMore" href="../security-ops/ticket.html">更多 ›</a>
+            </div>
+            <div class="home-panel-summary" id="todoSummary"></div>
+            <div class="home-list" id="todoList"></div>
+          </article>
+        </section>
+
+        <article class="card pad home-notice-card">
+          <div class="card-title-row">
+            <h2 class="card-title">通知公告</h2>
+            <a class="btn btn-ghost" href="../system/notice.html">更多 ›</a>
+          </div>
+          <div class="home-notice-list" id="noticeList"></div>
+        </article>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script src="../../../app/data/threat-mock.js"></script>
+  <script src="../../../app/data/asset-security-mock.js"></script>
+  <script src="../../../app/data/secops-mock.js"></script>
+  <script src="../../../app/data/home-mock.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script>
+    (function () {
+      const HW = window.HomeWorkbench;
+      if (!HW) return;
+
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function detailGrid(map) {
+        const keys = Object.keys(map || {});
+        return (
+          '<section class="detail-section"><h3 class="detail-title">基础信息</h3><div class="detail-grid user-detail-grid">' +
+          keys
+            .map(function (k) {
+              return (
+                '<div class="info-item"><span class="info-label">' +
+                esc(k) +
+                '</span><span class="info-value">' +
+                esc(map[k] == null || map[k] === "" ? "-" : map[k]) +
+                "</span></div>"
+              );
+            })
+            .join("") +
+          "</div></section>"
+        );
+      }
+
+      function openDetail(title, map) {
+        window.openAppDrawer({
+          title: title || "详情",
+          subtitle: "工作台",
+          body: detailGrid(map),
+          footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>',
+        });
+      }
+
+      function renderKpis() {
+        document.getElementById("homeKpis").innerHTML = HW.getKpis()
+          .map(function (k) {
+            return (
+              '<a class="metric-card home-kpi-link" href="' +
+              esc(k.href) +
+              '"><div class="metric-label">' +
+              esc(k.label) +
+              '</div><div class="metric-number">' +
+              esc(k.value) +
+              '</div><div class="metric-sub">' +
+              k.subHtml +
+              "</div></a>"
+            );
+          })
+          .join("");
+      }
+
+      function lineAreaSvg(trend) {
+        const w = 560;
+        const h = 200;
+        const padL = 36;
+        const padR = 16;
+        const padT = 24;
+        const padB = 32;
+        const all = [];
+        trend.series.forEach(function (s) {
+          s.values.forEach(function (v) { all.push(v); });
+        });
+        const max = Math.max.apply(null, all.concat([1]));
+        const min = 0;
+        const span = Math.max(max - min, 1);
+        const n = trend.labels.length;
+
+        function xy(values, i) {
+          const x = padL + (i * (w - padL - padR)) / Math.max(n - 1, 1);
+          const y = padT + (1 - (values[i] - min) / span) * (h - padT - padB);
+          return { x: x, y: y };
+        }
+
+        function path(values, close) {
+          let d = values
+            .map(function (v, i) {
+              const p = xy(values, i);
+              return (i ? "L" : "M") + p.x.toFixed(1) + " " + p.y.toFixed(1);
+            })
+            .join(" ");
+          if (close) {
+            const last = xy(values, values.length - 1);
+            const first = xy(values, 0);
+            d += " L" + last.x.toFixed(1) + " " + (h - padB) + " L" + first.x.toFixed(1) + " " + (h - padB) + " Z";
+          }
+          return d;
+        }
+
+        const grids = [0, 0.25, 0.5, 0.75, 1]
+          .map(function (t) {
+            const y = padT + t * (h - padT - padB);
+            return '<path d="M' + padL + " " + y + "H" + (w - padR) + '" stroke="#EDF1F7" stroke-width="1"/>';
+          })
+          .join("");
+
+        const labels = trend.labels
+          .map(function (lb, i) {
+            const p = xy(trend.series[0].values, i);
+            return (
+              '<text x="' +
+              p.x.toFixed(1) +
+              '" y="' +
+              (h - 10) +
+              '" text-anchor="middle" fill="#86909C" font-size="11">' +
+              esc(lb) +
+              "</text>"
+            );
+          })
+          .join("");
+
+        const seriesSvg = trend.series
+          .map(function (s, idx) {
+            const gid = "homeTrend" + idx;
+            return (
+              '<defs><linearGradient id="' +
+              gid +
+              '" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="' +
+              s.color +
+              '" stop-opacity="0.22"/><stop offset="100%" stop-color="' +
+              s.color +
+              '" stop-opacity="0"/></linearGradient></defs>' +
+              (idx === 0
+                ? '<path d="' + path(s.values, true) + '" fill="url(#' + gid + ')"/>'
+                : "") +
+              '<path d="' +
+              path(s.values, false) +
+              '" fill="none" stroke="' +
+              s.color +
+              '" stroke-width="3"/>'
+            );
+          })
+          .join("");
+
+        const legend = trend.series
+          .map(function (s) {
+            return (
+              '<span><i class="legend-dot" style="background:' +
+              s.color +
+              '"></i>' +
+              esc(s.name) +
+              "</span>"
+            );
+          })
+          .join("");
+
+        return (
+          '<div class="chart"><svg viewBox="0 0 ' +
+          w +
+          " " +
+          h +
+          '" role="img" aria-label="' +
+          esc(trend.title) +
+          '">' +
+          grids +
+          seriesSvg +
+          labels +
+          '</svg><div class="chart-legend">' +
+          legend +
+          "</div></div>"
+        );
+      }
+
+      function barBlock(bars) {
+        const max = Math.max.apply(
+          null,
+          bars.map(function (b) { return b.value; }).concat([1])
+        );
+        return (
+          '<div class="home-bar-chart">' +
+          bars
+            .map(function (b) {
+              const tone = b.tone || "";
+              const pct = Math.round((b.value / max) * 100);
+              return (
+                '<div class="home-bar-row"><span>' +
+                esc(b.label) +
+                '</span><div class="home-bar-track ' +
+                tone +
+                '"><span style="width:' +
+                pct +
+                '%"></span></div><strong>' +
+                b.value +
+                "</strong></div>"
+              );
+            })
+            .join("") +
+          "</div>"
+        );
+      }
+
+      function renderCharts() {
+        const c = HW.getChartPanels();
+        document.getElementById("homeCharts").innerHTML =
+          '<article class="card pad home-chart-card"><div class="card-title-row"><h2 class="card-title">' +
+          esc(c.alarmTrend.title) +
+          "</h2></div>" +
+          lineAreaSvg(c.alarmTrend) +
+          '</article><article class="card pad home-chart-card"><div class="card-title-row"><h2 class="card-title">' +
+          esc(c.ticketStatus.title) +
+          "</h2></div>" +
+          barBlock(c.ticketStatus.bars) +
+          '</article><article class="card pad home-chart-card"><div class="card-title-row"><h2 class="card-title">' +
+          esc(c.vulnLevel.title) +
+          "</h2></div>" +
+          barBlock(c.vulnLevel.bars) +
+          "</article>";
+      }
+
+      function chips(items) {
+        return items
+          .map(function (it) {
+            return (
+              '<span class="home-chip ' +
+              (it.tone || "") +
+              '">' +
+              esc(it.label) +
+              " <strong>" +
+              esc(it.value) +
+              "</strong></span>"
+            );
+          })
+          .join("");
+      }
+
+      function renderAlarmPanel() {
+        const p = HW.getThreatAlarmPanel();
+        document.getElementById("threatMore").href = p.moreHref;
+        document.getElementById("alarmSummary").innerHTML = chips(
+          (p.distribution || []).map(function (d) {
+            return {
+              label: d.label,
+              value: d.count,
+              tone: d.label === "告警" ? "danger" : d.label === "预警" ? "warning" : "",
+            };
+          })
+        );
+        const list = document.getElementById("alarmList");
+        if (!p.latest.length) {
+          list.innerHTML = '<div class="home-empty">暂无告警</div>';
+          return;
+        }
+        list.innerHTML = p.latest
+          .map(function (row, idx) {
+            return (
+              '<div class="home-row"><div class="home-row-main"><div><div class="home-row-title"><span class="tag ' +
+              esc(row.tagClass) +
+              '">' +
+              esc(row.level) +
+              "</span>" +
+              esc(row.title) +
+              '</div><div class="home-row-meta">' +
+              esc(row.time) +
+              '</div></div></div><div class="home-row-actions"><button class="btn btn-ghost" type="button" data-alarm-detail="' +
+              idx +
+              '">详情</button></div></div>'
+            );
+          })
+          .join("");
+        list.querySelectorAll("[data-alarm-detail]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const item = p.latest[Number(btn.getAttribute("data-alarm-detail"))];
+            if (item) openDetail("告警详情", item.detail);
+          });
+        });
+      }
+
+      function renderVulnPanel() {
+        const p = HW.getAssetVulnPanel();
+        document.getElementById("vulnMore").href = p.moreHref;
+        document.getElementById("vulnSummary").innerHTML = chips(
+          (p.distribution || []).map(function (d) {
+            return { label: d.label, value: d.count, tone: d.tone || "" };
+          })
+        );
+        const list = document.getElementById("vulnList");
+        if (!p.top.length) {
+          list.innerHTML = '<div class="home-empty">暂无高危漏洞</div>';
+          return;
+        }
+        list.innerHTML = p.top
+          .map(function (row, idx) {
+            return (
+              '<div class="home-row"><div class="home-row-main"><div><div class="home-row-title"><span class="tag ' +
+              esc(row.tagClass) +
+              '">' +
+              esc(row.level) +
+              "</span>" +
+              esc(row.title) +
+              '</div><div class="home-row-meta">' +
+              esc(row.asset) +
+              " · " +
+              esc(row.owner) +
+              '</div></div></div><div class="home-row-actions"><button class="btn btn-ghost" type="button" data-vuln-detail="' +
+              idx +
+              '">详情</button></div></div>'
+            );
+          })
+          .join("");
+        list.querySelectorAll("[data-vuln-detail]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const item = p.top[Number(btn.getAttribute("data-vuln-detail"))];
+            if (item) openDetail("脆弱性详情", item.detail);
+          });
+        });
+      }
+
+      function priorityDot(p) {
+        if (p === "紧急") return "danger";
+        if (p === "高") return "warning";
+        if (p === "低") return "success";
+        return "primary";
+      }
+
+      function renderTodos() {
+        const data = HW.getMergedTodos();
+        document.getElementById("todoMore").href = data.moreHref;
+        const s = data.summary || {};
+        document.getElementById("todoSummary").innerHTML = chips([
+          { label: "工单", value: s.ticket || 0 },
+          { label: "告警", value: s.alarm || 0, tone: "danger" },
+          { label: "演练", value: s.drill || 0, tone: "warning" },
+          { label: "配置", value: s.config || 0 },
+        ]);
+        const list = document.getElementById("todoList");
+        if (!data.items.length) {
+          list.innerHTML = '<div class="home-empty">暂无待办</div>';
+          return;
+        }
+        list.innerHTML = data.items
+          .map(function (row, idx) {
+            return (
+              '<div class="home-row"><div class="home-row-main"><span class="dot ' +
+              priorityDot(row.priority) +
+              '"></span><div><div class="home-row-title"><span class="tag">' +
+              esc(row.typeLabel) +
+              "</span>" +
+              esc(row.title) +
+              '</div><div class="home-row-meta">' +
+              esc(row.meta) +
+              '</div></div></div><div class="home-row-actions"><button class="btn btn-ghost" type="button" data-todo-detail="' +
+              idx +
+              '">详情</button><a class="btn btn-ghost" href="' +
+              esc(row.href) +
+              '">处理</a></div></div>'
+            );
+          })
+          .join("");
+        list.querySelectorAll("[data-todo-detail]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const item = data.items[Number(btn.getAttribute("data-todo-detail"))];
+            if (item) openDetail("待办详情", item.detail);
+          });
+        });
+      }
+
+      function renderNotices() {
+        const notices = HW.getNotices();
+        const el = document.getElementById("noticeList");
+        if (!notices.length) {
+          el.innerHTML = '<div class="home-empty">暂无公告</div>';
+          return;
+        }
+        el.innerHTML = notices
+          .map(function (n, idx) {
+            return (
+              '<div class="home-notice-item" data-notice="' +
+              idx +
+              '"><div class="home-row-title"><span class="tag">' +
+              esc(n.type) +
+              "</span> " +
+              esc(n.title) +
+              '</div><div class="home-row-meta">' +
+              esc(n.publishedAt) +
+              " · " +
+              esc(n.publisher) +
+              "</div></div>"
+            );
+          })
+          .join("");
+        el.querySelectorAll("[data-notice]").forEach(function (node) {
+          node.addEventListener("click", function () {
+            const n = notices[Number(node.getAttribute("data-notice"))];
+            if (!n) return;
+            openDetail("公告详情", {
+              公告标题: n.title,
+              公告类型: n.type,
+              发布人: n.publisher,
+              发布时间: n.publishedAt,
+              状态: n.status,
+              公告内容: n.content,
+            });
+          });
+        });
+      }
+
+      function openCreateTicket() {
+        const types =
+          (window.SecOps && window.SecOps.meta && window.SecOps.meta.ticketTypes) ||
+          ["告警处置", "漏洞整改", "配置不合规", "演练任务", "其他"];
+        const priorities =
+          (window.SecOps && window.SecOps.meta && window.SecOps.meta.priorities) ||
+          ["紧急", "高", "中", "低"];
+        const body =
+          '<label class="form-field form-item"><span class="form-label form-required">工单标题</span><input class="form-control" data-ticket-field="title" placeholder="请输入"></label>' +
+          '<label class="form-field form-item"><span class="form-label">类型</span><select class="form-control" data-ticket-field="type">' +
+          types.map(function (t) { return "<option>" + esc(t) + "</option>"; }).join("") +
+          "</select></label>" +
+          '<label class="form-field form-item"><span class="form-label">优先级</span><select class="form-control" data-ticket-field="priority">' +
+          priorities
+            .map(function (t) {
+              return "<option" + (t === "中" ? " selected" : "") + ">" + esc(t) + "</option>";
+            })
+            .join("") +
+          "</select></label>" +
+          '<label class="form-field form-item"><span class="form-label">处理人</span><input class="form-control" data-ticket-field="handler" placeholder="可选"></label>' +
+          '<label class="form-field form-item"><span class="form-label">关联资产</span><input class="form-control" data-ticket-field="asset" placeholder="可选"></label>';
+
+        window.openAppDrawer({
+          title: "新建安全工单",
+          subtitle: "工作台 · 安全工单",
+          body: body,
+          footer:
+            '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' +
+            '<button class="btn btn-primary" type="button" data-ticket-submit>提交</button>',
+        });
+
+        const footerBtn = document.querySelector("[data-ticket-submit]");
+        if (!footerBtn) return;
+        footerBtn.addEventListener("click", function () {
+          const root = document.querySelector(".drawer.open") || document;
+          const title = (root.querySelector('[data-ticket-field="title"]') || {}).value || "";
+          if (!String(title).trim()) {
+            if (window.openAppConfirm) {
+              window.openAppConfirm({ title: "提示", message: "请输入工单标题。", confirmText: "知道了" });
+            } else {
+              alert("请输入工单标题。");
+            }
+            return;
+          }
+          HW.createTicket({
+            title: String(title).trim(),
+            type: (root.querySelector('[data-ticket-field="type"]') || {}).value,
+            priority: (root.querySelector('[data-ticket-field="priority"]') || {}).value,
+            handler: (root.querySelector('[data-ticket-field="handler"]') || {}).value || "-",
+            asset: (root.querySelector('[data-ticket-field="asset"]') || {}).value || "-",
+          });
+          window.closeAppDrawer();
+          refresh();
+        });
+      }
+
+      function refresh() {
+        renderKpis();
+        renderCharts();
+        renderAlarmPanel();
+        renderVulnPanel();
+        renderTodos();
+        renderNotices();
+      }
+
+      document.querySelector("[data-open-ticket]").addEventListener("click", openCreateTicket);
+      refresh();
+    })();
+  </script>
+</body>
+</html>

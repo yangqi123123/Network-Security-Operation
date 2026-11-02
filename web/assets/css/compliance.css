@@ -1,0 +1,233 @@
+/* 安全合规与审计管理：证据/审计小表、时间线、异常列表 + 列表视口锁高 */
+
+.cp-subtable {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+.cp-subtable th,
+.cp-subtable td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider, #edf1f7);
+  text-align: left;
+}
+
+.cp-subtable th {
+  color: var(--text-secondary, #86909c);
+  font-weight: 600;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+.cp-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cp-timeline li {
+  position: relative;
+  padding: 0 0 16px 16px;
+  border-left: 2px solid var(--border, #e5eaf3);
+}
+
+.cp-timeline li:last-child {
+  padding-bottom: 0;
+}
+
+.cp-timeline .cp-time {
+  font-size: 12px;
+  color: var(--text-secondary, #86909c);
+}
+
+.cp-timeline .cp-title {
+  font-weight: 600;
+  color: var(--text-title, #1a1c1f);
+}
+
+.cp-muted {
+  color: var(--text-secondary, #86909c);
+  font-size: 13px;
+}
+
+.cp-anomaly-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--divider, #edf1f7);
+}
+
+.cp-anomaly-item:last-child {
+  border-bottom: none;
+}
+
+.cp-risk-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-primary, #50565d);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cp-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+
+.cp-checkboxes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/*
+ * 列表工作台视口锁高（对齐桌面安全 / 用户管理规范）
+ * 全屏画布类例外不适用本模块。
+ */
+body.cp-page {
+  overflow: hidden;
+}
+
+body.cp-page .app-shell {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+body.cp-page .main {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
+
+body.cp-page .main > .screen-frame.stack {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  overflow: hidden;
+}
+
+body.cp-page .main > .screen-frame.stack > .metric-grid,
+body.cp-page .main > .screen-frame.stack > .filters {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+body.cp-page .user-list-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+body.cp-page .user-list-card > .card-title-row,
+body.cp-page .user-list-card > .pagination {
+  flex: 0 0 auto;
+}
+
+body.cp-page .user-list-card > .table-wrap {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+  position: relative;
+}
+
+body.cp-page .user-list-card .table {
+  width: max-content;
+  min-width: 100%;
+}
+
+body.cp-page .user-list-card .table.table-actions-sticky {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+body.cp-page .user-list-card .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+body.cp-page .user-list-card .table.table-actions-sticky th.user-actions-col,
+body.cp-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+body.cp-page .user-list-card .table.table-actions-sticky th:last-child,
+body.cp-page .user-list-card .table.table-actions-sticky td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  min-width: 260px;
+  background: #fff;
+  box-shadow: -8px 0 12px rgba(26, 28, 31, 0.05);
+}
+
+body.cp-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+body.cp-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  z-index: 5;
+  top: 0;
+  right: 0;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+body.cp-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+body.cp-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: #f7f9ff;
+}
+
+[data-theme="dark"] body.cp-page .user-list-card .table thead th,
+[data-theme="dark"] body.cp-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+[data-theme="dark"] body.cp-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  background: #0a1938;
+}
+
+[data-theme="dark"] body.cp-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+[data-theme="dark"] body.cp-page .user-list-card .table.table-actions-sticky td:last-child {
+  background: var(--bg-card);
+  box-shadow: -8px 0 12px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] body.cp-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+[data-theme="dark"] body.cp-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: rgba(19, 90, 250, 0.12);
+}
+
+[data-theme="dark"] .cp-subtable th {
+  background: #0a1938;
+}
+
+body.cp-page .pagination {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+}
+
+body.cp-page .pagination > span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+body.cp-page .pagination .page-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>历史性能报表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css?v=pm-report-20260329">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <style>
+    /* 本页布局：消除底部大块留白；工具按钮不贴边 */
+    body.pm-report-page .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 16px 24px 20px;
+    }
+    body.pm-report-page .main > .screen-frame.pm-screen {
+      flex: 1;
+      min-height: 0;
+      max-width: none;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    body.pm-report-page .pm-report-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+      padding: 12px 16px;
+      background: var(--bg-card, #fff);
+      border: 1px solid var(--border, #e5eaf3);
+      border-radius: 8px;
+    }
+    body.pm-report-page .pm-report-toolbar .btn-row {
+      justify-content: flex-start;
+      margin: 0;
+    }
+    body.pm-report-page .pm-report-toolbar .pm-range-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    body.pm-report-page .pm-report-layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+    body.pm-report-page .pm-report-nav {
+      align-self: start; /* 不拉高，避免左侧菜单底部大块留白 */
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    body.pm-report-page .pm-report-nav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      margin: 0;
+      background: #f2f3f5;
+      color: #1d2129;
+      border: 0;
+      border-radius: 4px;
+      padding: 10px 12px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    body.pm-report-page .pm-report-nav button.active {
+      background: #165dff;
+      color: #fff;
+    }
+    body.pm-report-page .pm-report-main {
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    body.pm-report-page .pm-metrics {
+      flex-shrink: 0;
+    }
+    body.pm-report-page .pm-report-chart-card {
+      flex: 1 1 auto;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    body.pm-report-page .pm-report-chart-card > .card-title-row {
+      flex-shrink: 0;
+      padding: 16px 20px 0;
+      margin-bottom: 8px;
+    }
+    body.pm-report-page .pm-report-chart-card .pm-chart {
+      flex: 1;
+      min-height: 220px;
+      margin: 0 16px 16px;
+      height: auto !important;
+    }
+    body.pm-report-page .pm-report-table-card {
+      flex: 0 0 auto;
+      max-height: 220px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    body.pm-report-page .pm-report-table-card > .table-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 8px 16px 12px;
+    }
+    [data-theme="dark"] body.pm-report-page .pm-report-toolbar {
+      background: var(--bg-card, #0E1C3B);
+      border-color: #243054;
+    }
+    [data-theme="dark"] body.pm-report-page .pm-report-nav button {
+      background: #1E3A5F;
+      color: #fff;
+    }
+    [data-theme="dark"] body.pm-report-page .pm-report-nav button.active {
+      background: #FFD600;
+      color: #000;
+    }
+    @media (max-width: 1100px) {
+      body.pm-report-page .pm-report-layout {
+        grid-template-columns: 1fr;
+        overflow: auto;
+      }
+      body.pm-report-page .pm-report-nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+        height: auto;
+      }
+      body.pm-report-page .pm-report-nav button {
+        width: auto;
+      }
+    }
+  </style>
+</head>
+<body class="pm-page pm-report-page" data-menu-key="network.perf-monitor" data-page-section="性能监测" data-page-title="历史性能报表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame pm-screen">
+        <section class="pm-report-toolbar">
+          <div class="btn-row">
+            <a class="btn btn-secondary" href="perf-monitor.html">返回监测列表</a>
+            <button class="btn btn-secondary" type="button" data-export="xls">导出 xls</button>
+            <button class="btn btn-primary" type="button" data-export="pdf">导出 pdf</button>
+          </div>
+          <div class="pm-range-wrap">
+            <span class="form-label" style="margin:0">统计时段</span>
+            <div class="pm-range-bar" id="pmReportRanges"></div>
+            <span id="pmReportCustom" class="pm-custom-range hidden">
+              <input class="form-control" type="date" id="pmRFrom">
+              <span>—</span>
+              <input class="form-control" type="date" id="pmRTo">
+            </span>
+          </div>
+        </section>
+
+        <div class="pm-report-layout">
+          <aside class="card pm-report-nav" id="pmReportNav"></aside>
+          <section class="pm-report-main">
+            <section class="pm-metrics" id="pmReportSummary"></section>
+            <section class="card pm-report-chart-card">
+              <div class="card-title-row"><h2 class="card-title" id="pmReportTitle">报表</h2></div>
+              <div class="pm-chart" id="pmReportChart"></div>
+            </section>
+            <section class="card pm-report-table-card">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th>排名</th><th>名称</th><th>IP</th><th>数值</th><th>单位</th></tr></thead>
+                  <tbody id="pmReportTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/perf-monitor-mock.js"></script>
+  <script>
+    (function () {
+      const PM = window.PerfMonitor;
+      let reportType = PM.REPORT_TYPES[0].key;
+      let rangeKey = "7d";
+      let chart;
+
+      const ranges = [
+        ["1h", "1小时"],
+        ["7d", "7天"],
+        ["14d", "14天"],
+        ["30d", "30天"],
+        ["365d", "365天"],
+        ["custom", "自定义"],
+      ];
+
+      document.getElementById("pmReportNav").innerHTML = PM.REPORT_TYPES.map(
+        (t) => `<button type="button" data-rtype="${t.key}" class="${t.key === reportType ? "active" : ""}">${t.label}</button>`
+      ).join("");
+
+      document.getElementById("pmReportRanges").innerHTML = ranges
+        .map(
+          ([k, label]) =>
+            `<button type="button" class="pm-range-btn ${rangeKey === k ? "active" : ""}" data-rrange="${k}">${label}</button>`
+        )
+        .join("");
+
+      function paint() {
+        const report = PM.getReport(reportType, rangeKey === "custom" ? "30d" : rangeKey);
+        document.getElementById("pmReportTitle").textContent = report.label;
+        document.getElementById("pmReportSummary").innerHTML = [
+          ["平均值", report.summary.avg],
+          ["最大值", report.summary.max],
+          ["最小值", report.summary.min],
+          ["明细行", report.rows.length],
+        ]
+          .map(
+            ([label, value]) =>
+              `<article class="pm-metric-card"><div class="pm-metric-label">${label}</div><div class="pm-metric-value">${value}</div></article>`
+          )
+          .join("");
+        document.getElementById("pmReportTable").innerHTML = report.rows
+          .map(
+            (r) =>
+              `<tr><td>${r.rank}</td><td>${r.name}</td><td>${r.ip}</td><td>${r.value}</td><td>${r.unit}</td></tr>`
+          )
+          .join("");
+
+        const el = document.getElementById("pmReportChart");
+        if (!chart) chart = echarts.init(el);
+        chart.setOption({
+          tooltip: { trigger: "axis" },
+          grid: { left: 48, right: 24, top: 28, bottom: 36, containLabel: false },
+          xAxis: {
+            type: "category",
+            data: report.series.map((p) => p.t),
+            boundaryGap: false,
+            axisLine: { show: true, lineStyle: { color: "#C9CDD4" } },
+            axisTick: { show: true },
+            axisLabel: { color: "#86909c", hideOverlap: true },
+          },
+          yAxis: {
+            type: "value",
+            axisLine: { show: true, lineStyle: { color: "#C9CDD4" } },
+            axisTick: { show: true },
+            axisLabel: { color: "#86909c" },
+            splitLine: { lineStyle: { color: "#EDF1F7" } },
+          },
+          series: [{
+            type: "line",
+            smooth: true,
+            data: report.series.map((p) => p.v),
+            areaStyle: { opacity: 0.12 },
+            itemStyle: { color: "#17C3B2" },
+          }],
+        });
+        requestAnimationFrame(() => chart.resize());
+      }
+
+      document.getElementById("pmReportNav").addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-rtype]");
+        if (!btn) return;
+        reportType = btn.dataset.rtype;
+        document.querySelectorAll("#pmReportNav [data-rtype]").forEach((el) => el.classList.toggle("active", el === btn));
+        paint();
+      });
+
+      document.getElementById("pmReportRanges").addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-rrange]");
+        if (!btn) return;
+        rangeKey = btn.dataset.rrange;
+        document.querySelectorAll("#pmReportRanges [data-rrange]").forEach((el) => el.classList.toggle("active", el === btn));
+        document.getElementById("pmReportCustom").classList.toggle("hidden", rangeKey !== "custom");
+        paint();
+      });
+
+      document.addEventListener("click", (event) => {
+        const exportBtn = event.target.closest("[data-export]");
+        if (!exportBtn) return;
+        const ext = exportBtn.dataset.export;
+        const label = (PM.REPORT_TYPES.find((t) => t.key === reportType) || {}).label || "report";
+        window.openAppDrawer({
+          title: "导出",
+          body: `<p>已生成 Mock 文件 <strong>${label}-${rangeKey}.${ext}</strong>（演示，无真实下载）</p>`,
+          footer: `<button class="btn btn-primary" type="button" data-drawer-close>知道了</button>`,
+        });
+      });
+
+      window.addEventListener("resize", () => chart?.resize());
+      paint();
+      setTimeout(() => chart?.resize(), 80);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+@import url("./list-viewport.css");
+
+/* 资产安全管理：时间线、画像入口、类型 Tab 横滑 */
+
+.as-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.as-timeline li {
+  position: relative;
+  padding: 0 0 16px 20px;
+  border-left: 2px solid var(--divider);
+  margin-left: 8px;
+}
+
+.as-timeline li:last-child {
+  padding-bottom: 0;
+}
+
+.as-timeline li::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.as-timeline .as-time {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.as-profile-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.as-profile-actions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.as-tabs-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.as-tabs-scroll .tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.as-score-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--divider);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.as-score-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+
+.as-breakdown {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.as-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.as-related-empty {
+  padding: 16px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.as-detail-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* 资产画像内二级居中弹窗：盖在抽屉之上，不关闭一级抽屉 */
+.as-submodal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(26, 28, 31, 0.45);
+}
+
+.as-submodal {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(80vh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card, #fff);
+  border-radius: 6px;
+  box-shadow: 0 16px 40px rgba(26, 28, 31, 0.2);
+  overflow: hidden;
+}
+
+.as-submodal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-title);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.as-submodal-head button {
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.as-submodal-body {
+  flex: 1;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+.as-submodal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 56px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--divider);
+  background: var(--bg-card, #fff);
+}
+
+.as-submodal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.as-submodal-table th,
+.as-submodal-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.as-submodal-table th {
+  background: var(--primary-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.as-submodal-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .as-submodal-mask {
+  background: rgba(8, 14, 32, 0.65);
+}

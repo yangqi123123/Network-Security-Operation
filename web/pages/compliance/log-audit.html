@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>日志集中审计与分析 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/compliance.css">
+</head>
+<body class="cp-page" data-menu-key="compliance.log-audit" data-page-section="安全合规与审计" data-page-title="日志集中审计">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="cpLogMetrics">
+          <article class="metric-card"><div class="metric-label">今日日志量</div><div class="metric-number" data-m="todayCount">0</div></article>
+          <article class="metric-card"><div class="metric-label">采集异常</div><div class="metric-number" data-m="anomalyCount">0</div></article>
+          <article class="metric-card"><div class="metric-label">关键资产无日志</div><div class="metric-number" data-m="criticalNoLog">0</div></article>
+          <article class="metric-card"><div class="metric-label">审计策略未启用</div><div class="metric-number" data-m="auditDisabled">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">开始日期</span>
+              <input class="form-control" data-filter="dateFrom" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">结束日期</span>
+              <input class="form-control" data-filter="dateTo" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">日志类型</span>
+              <select class="form-control" data-filter="type"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">资产</span>
+              <select class="form-control" data-filter="asset"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">账号</span>
+              <input class="form-control" data-filter="account" placeholder="请输入">
+            </label>
+            <label class="form-field"><span class="form-label">严重性</span>
+              <select class="form-control" data-filter="severity">
+                <option value="">全部</option>
+                <option value="critical">严重</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">来源系统</span>
+              <select class="form-control" data-filter="source"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">处置状态</span>
+              <select class="form-control" data-filter="handleStatus">
+                <option value="">全部</option>
+                <option value="open">未处置</option>
+                <option value="done">已处置</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="摘要/原始日志">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">日志列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="anomalies"><i class="fa-solid fa-triangle-exclamation"></i> 异常监控</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>时间</th><th>类型</th><th>资产</th><th>账号</th><th>事件摘要</th>
+                  <th>严重性</th><th>来源</th><th>处置状态</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="cpLogBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="cpLogPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/compliance-mock.js"></script>
+  <script>
+    const CP = window.Compliance;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return `<span class="tag">-</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function fillFilters() {
+      document.querySelector("[data-filter='type']").innerHTML =
+        '<option value="">全部</option>' + CP.LOG_TYPES.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+      document.querySelector("[data-filter='asset']").innerHTML =
+        '<option value="">全部</option>' + CP.meta.hosts.map((h) => `<option value="${esc(h)}">${esc(h)}</option>`).join("");
+      document.querySelector("[data-filter='source']").innerHTML =
+        '<option value="">全部</option>' + CP.meta.sources.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = CP.logMetrics();
+      document.querySelectorAll("#cpLogMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("cpLogPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = CP.listLogs({
+        dateFrom: f.dateFrom || undefined,
+        dateTo: f.dateTo || undefined,
+        type: f.type || undefined,
+        asset: f.asset || undefined,
+        account: f.account || undefined,
+        severity: f.severity || undefined,
+        source: f.source || undefined,
+        handleStatus: f.handleStatus || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("cpLogBody").innerHTML = rows.map((row) => `<tr data-id="${esc(row.id)}">
+        <td>${dash(row.time)}</td>
+        <td>${dash(row.type)}</td>
+        <td>${dash(row.asset)}</td>
+        <td>${dash(row.account)}</td>
+        <td>${dash(row.summary)}</td>
+        <td>${tagHtml(CP.severityTag(row.severity))}</td>
+        <td>${dash(row.source)}</td>
+        <td>${tagHtml(CP.handleTag(row.handleStatus))}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          <button class="table-action" type="button" data-row="relate" data-id="${esc(row.id)}">关联分析</button>
+          ${row.handleStatus === "open" ? `<button class="table-action" type="button" data-row="done" data-id="${esc(row.id)}">标记已处置</button>` : ""}
+        </td>
+      </tr>`).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function openDetail(id) {
+      const row = CP.getLog(id);
+      if (!row) return;
+      const alerts = (row.relatedAlerts || []).length ? row.relatedAlerts.map(esc).join("、") : "-";
+      const files = (row.attachments || []).length ? row.attachments.map(esc).join("、") : "-";
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("时间", dash(row.time))}
+            ${infoItem("日志类型", dash(row.type))}
+            ${infoItem("资产", dash(row.asset))}
+            ${infoItem("账号", dash(row.account))}
+            ${infoItem("严重性", tagHtml(CP.severityTag(row.severity)))}
+            ${infoItem("来源系统", dash(row.source))}
+            ${infoItem("处置状态", tagHtml(CP.handleTag(row.handleStatus)))}
+            ${infoItem("事件摘要", dash(row.summary))}
+            ${infoItem("原始日志摘要", dash(row.rawSummary))}
+            ${infoItem("关联告警", alerts)}
+            ${infoItem("证据附件", files)}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "日志详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openRelate(id) {
+      const row = CP.getLog(id);
+      if (!row) return;
+      const timeline = (row.timeline || []).length
+        ? `<ul class="cp-timeline">${row.timeline.map((t) => `<li><div class="cp-time">${dash(t.time)}</div><div class="cp-title">${dash(t.title)}</div><div class="cp-muted">${dash(t.detail)}</div></li>`).join("")}</ul>`
+        : `<div class="cp-muted">暂无时间线条目，以下为事件摘要关联示意。</div><ul class="cp-timeline"><li><div class="cp-time">${dash(row.time)}</div><div class="cp-title">事件产生</div><div class="cp-muted">${dash(row.summary)}</div></li></ul>`;
+      const related = `
+        <p class="cp-muted">关联对象摘要（图谱示意）：</p>
+        <ul class="cp-risk-list">
+          <li>资产：${dash(row.asset)}</li>
+          <li>账号：${dash(row.account)}</li>
+          <li>告警：${(row.relatedAlerts || []).length ? row.relatedAlerts.map(esc).join("、") : "-"}</li>
+          <li>附件：${(row.attachments || []).length ? row.attachments.map(esc).join("、") : "-"}</li>
+        </ul>`;
+      const body = `<section class="detail-section"><h3 class="detail-title">事件时间线</h3>${timeline}</section><section class="detail-section"><h3 class="detail-title">关联对象</h3>${related}</section>`;
+      window.openAppDrawer({ title: "关联分析", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openAnomalies() {
+      const list = CP.listLogAnomalies();
+      const body = list.map((a) => `
+        <div class="cp-anomaly-item">
+          <div>${tagHtml({ label: a.type, tagClass: "warning" })} <strong>${esc(a.asset || "")}</strong></div>
+          <div class="cp-muted" style="margin-top:4px">${dash(a.summary)}</div>
+          <div class="cp-muted">发现时间：${dash(a.foundAt)}</div>
+        </div>`).join("") || `<div class="cp-muted">暂无异常</div>`;
+      window.openAppDrawer({ title: "采集异常监控", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    fillFilters();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search" || action === "refresh") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "anomalies") openAnomalies();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "detail") openDetail(id);
+        if (rowBtn.dataset.row === "relate") openRelate(id);
+        if (rowBtn.dataset.row === "done") {
+          CP.markLogDone(id);
+          render();
+        }
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

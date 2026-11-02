@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>终端外设控制 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/desktop-security.css?v=20261101b">
+</head>
+<body class="ds-page" data-menu-key="desktop.peripheral" data-page-section="桌面安全管理" data-page-title="终端外设控制">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">终端/IP</span>
+              <input class="form-control" data-filter="keyword" placeholder="请输入">
+            </label>
+            <label class="form-field"><span class="form-label">部门</span>
+              <select class="form-control" data-filter="dept"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">同步状态</span>
+              <select class="form-control" data-filter="syncStatus">
+                <option value="">全部</option>
+                <option value="synced">已下发</option>
+                <option value="pending">待同步</option>
+                <option value="conflict">冲突</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">终端外设策略</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="refresh-sync"><i class="fa-solid fa-rotate"></i> 刷新同步</button>
+              <button class="btn btn-secondary" type="button" data-action="batch"><i class="fa-solid fa-layer-group"></i> 批量应用</button>
+              <button class="btn btn-primary" type="button" data-action="new-policy"><i class="fa-solid fa-plus"></i> 新建策略模板</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th class="check-cell"><input type="checkbox" data-select-all></th>
+                  <th>终端</th><th>IP</th><th>部门</th><th>外设开关摘要</th>
+                  <th>策略版本</th><th>同步状态</th><th>最近同步</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsPeriBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsPeriPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/desktop-security-mock.js"></script>
+  <script>
+    const DS = window.DesktopSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+    const MODE_OPTS = [["allow", "允许"], ["restrict", "受限"], ["deny", "禁止"]];
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function channelSource(binding) {
+      const full = DS.getPeripheralBinding(binding.hostId);
+      if (!full) return binding;
+      if (full.printer != null) return full;
+      return full.policy || binding;
+    }
+
+    function fillDeptFilter() {
+      const depts = [...new Set(DS.listHosts().map((h) => h.dept).filter(Boolean))];
+      const sel = document.querySelector("[data-filter='dept']");
+      sel.innerHTML = '<option value="">全部</option>' + depts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsPeriPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = DS.listPeripheralBindings({
+        keyword: f.keyword || undefined,
+        dept: f.dept || undefined,
+        syncStatus: f.syncStatus || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dsPeriBody").innerHTML = pageRows.map((row) => {
+        const sync = DS.syncTag(row.syncStatus);
+        const summary = DS.summarizePeripheral(channelSource(row));
+        return `<tr data-host="${esc(row.hostId)}">
+          <td class="check-cell"><input type="checkbox" data-host-check value="${esc(row.hostId)}"></td>
+          <td>${dash(row.hostName)}</td>
+          <td>${dash(row.hostIp)}</td>
+          <td>${dash(row.dept)}</td>
+          <td><span class="ds-channel-summary">${esc(summary)}</span></td>
+          <td>${dash(row.version)}</td>
+          <td>${tagHtml(sync)}</td>
+          <td>${dash(row.syncedAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-host="${esc(row.hostId)}">详情</button>
+            <button class="table-action" type="button" data-row="config" data-host="${esc(row.hostId)}">配置管控</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function modeSelect(id, value) {
+      return `<select class="form-control" id="${id}">${MODE_OPTS.map(([k, lab]) => `<option value="${k}" ${k === value ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
+    }
+
+    function toolChecks(name, list, selected, modeId) {
+      const selectedSet = new Set(selected || []);
+      return `<div class="ds-tool-checkboxes" data-tools-for="${modeId}">${list.map((t) => {
+        const id = `${name}_${t}`;
+        return `<label><input type="checkbox" name="${name}" value="${esc(t)}" ${selectedSet.has(t) ? "checked" : ""}> ${esc(t)}</label>`;
+      }).join("")}</div>`;
+    }
+
+    function openDetail(hostId) {
+      const row = DS.getPeripheralBinding(hostId);
+      if (!row) return;
+      const src = row.printer != null ? row : (row.policy || {});
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">终端信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("终端", dash(row.hostName))}
+            ${infoItem("IP", dash(row.hostIp))}
+            ${infoItem("部门", dash(row.dept))}
+            ${infoItem("策略名称", dash(row.policy?.name || row.policyName))}
+            ${infoItem("策略版本", dash(row.version))}
+            ${infoItem("同步状态", tagHtml(DS.syncTag(row.syncStatus)))}
+            ${infoItem("最近同步", dash(row.syncedAt))}
+          </div>
+        </section>
+        <section class="detail-section ds-detail-subsection">
+          <h3 class="detail-title">外设通道</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("打印机", tagHtml(DS.modeTag(src.printer)))}
+            ${infoItem("刻录机", tagHtml(DS.modeTag(src.burner)))}
+            ${infoItem("蓝牙", tagHtml(DS.modeTag(src.bluetooth)))}
+            ${infoItem("摄像头", tagHtml(DS.modeTag(src.camera)))}
+            ${infoItem("串口", tagHtml(DS.modeTag(src.serial)))}
+            ${infoItem("远程控制工具", `${tagHtml(DS.modeTag(src.remoteToolsMode))} ${(src.remoteTools || []).join("、") || "-"}`)}
+            ${infoItem("文件传输工具", `${tagHtml(DS.modeTag(src.fileTransferMode))} ${(src.fileTransferTools || []).join("、") || "-"}`)}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "外设策略详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openConfig(hostId) {
+      const row = DS.getPeripheralBinding(hostId);
+      if (!row) return;
+      const src = row.printer != null ? row : (row.policy || {
+        printer: "allow", burner: "deny", bluetooth: "deny", camera: "restrict", serial: "deny",
+        remoteToolsMode: "deny", fileTransferMode: "deny", remoteTools: [], fileTransferTools: [],
+      });
+      const body = `
+        <p class="helper-text" style="margin-bottom:16px">终端：${esc(row.hostName)}（${esc(row.hostIp)}）</p>
+        <label class="form-field form-item"><span class="form-label">打印机</span>${modeSelect("cfg_printer", src.printer || "allow")}</label>
+        <label class="form-field form-item"><span class="form-label">刻录机</span>${modeSelect("cfg_burner", src.burner || "deny")}</label>
+        <label class="form-field form-item"><span class="form-label">蓝牙</span>${modeSelect("cfg_bluetooth", src.bluetooth || "deny")}</label>
+        <label class="form-field form-item"><span class="form-label">摄像头</span>${modeSelect("cfg_camera", src.camera || "restrict")}</label>
+        <label class="form-field form-item"><span class="form-label">串口</span>${modeSelect("cfg_serial", src.serial || "deny")}</label>
+        <label class="form-field form-item"><span class="form-label">远程控制工具</span>${modeSelect("cfg_remoteToolsMode", src.remoteToolsMode || "deny")}</label>
+        ${toolChecks("cfg_remoteTools", DS.REMOTE_TOOLS, src.remoteTools, "cfg_remoteToolsMode")}
+        <label class="form-field form-item"><span class="form-label">文件传输工具</span>${modeSelect("cfg_fileTransferMode", src.fileTransferMode || "deny")}</label>
+        ${toolChecks("cfg_fileTransferTools", DS.FT_TOOLS, src.fileTransferTools, "cfg_fileTransferMode")}`;
+      window.openAppDrawer({
+        title: "配置管控",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="config" data-host="${esc(hostId)}">保存</button>`,
+      });
+    }
+
+    function openNewPolicy() {
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">策略名称</span><input class="form-control" id="polName" placeholder="请输入"></label>
+        <label class="form-field form-item"><span class="form-label">打印机</span>${modeSelect("pol_printer", "allow")}</label>
+        <label class="form-field form-item"><span class="form-label">刻录机</span>${modeSelect("pol_burner", "deny")}</label>
+        <label class="form-field form-item"><span class="form-label">蓝牙</span>${modeSelect("pol_bluetooth", "deny")}</label>
+        <label class="form-field form-item"><span class="form-label">摄像头</span>${modeSelect("pol_camera", "restrict")}</label>
+        <label class="form-field form-item"><span class="form-label">串口</span>${modeSelect("pol_serial", "deny")}</label>
+        <label class="form-field form-item"><span class="form-label">远程控制工具</span>${modeSelect("pol_remoteToolsMode", "deny")}</label>
+        ${toolChecks("pol_remoteTools", DS.REMOTE_TOOLS, [], "pol_remoteToolsMode")}
+        <label class="form-field form-item"><span class="form-label">文件传输工具</span>${modeSelect("pol_fileTransferMode", "deny")}</label>
+        ${toolChecks("pol_fileTransferTools", DS.FT_TOOLS, [], "pol_fileTransferMode")}`;
+      window.openAppDrawer({
+        title: "新建策略模板",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="policy">确认</button>',
+      });
+    }
+
+    function openBatch() {
+      const selected = [...document.querySelectorAll("[data-host-check]:checked")].map((el) => el.value);
+      const polOpts = DS.listPeripheralPolicies().map((p) => `<option value="${esc(p.id)}">${esc(p.name)}（${esc(p.version)}）</option>`).join("");
+      const body = `
+        <p class="helper-text" style="margin-bottom:16px">已勾选 ${selected.length} 台终端；未勾选时将提示先选择。</p>
+        <label class="form-field form-item"><span class="form-label form-required">策略模板</span>
+          <select class="form-control" id="batchPolicy">${polOpts}</select>
+        </label>`;
+      window.openAppDrawer({
+        title: "批量应用策略",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="batch" data-hosts="${esc(selected.join(","))}">确认</button>`,
+      });
+    }
+
+    function checkedTools(name) {
+      return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((el) => el.value);
+    }
+
+    fillDeptFilter();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "refresh-sync") { DS.refreshPeripheralSync(); render(); }
+      if (action === "new-policy") openNewPolicy();
+      if (action === "batch") openBatch();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.host);
+        if (rowBtn.dataset.row === "config") openConfig(rowBtn.dataset.host);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      if (event.target.matches("[data-select-all]")) {
+        document.querySelectorAll("[data-host-check]").forEach((el) => { el.checked = event.target.checked; });
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "config") {
+        DS.savePeripheralBinding(submit.dataset.host, {
+          printer: document.getElementById("cfg_printer").value,
+          burner: document.getElementById("cfg_burner").value,
+          bluetooth: document.getElementById("cfg_bluetooth").value,
+          camera: document.getElementById("cfg_camera").value,
+          serial: document.getElementById("cfg_serial").value,
+          remoteToolsMode: document.getElementById("cfg_remoteToolsMode").value,
+          fileTransferMode: document.getElementById("cfg_fileTransferMode").value,
+          remoteTools: checkedTools("cfg_remoteTools"),
+          fileTransferTools: checkedTools("cfg_fileTransferTools"),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+      if (submit.dataset.drawerSubmit === "policy") {
+        const name = document.getElementById("polName")?.value.trim();
+        if (!name) { alert("请填写策略名称"); return; }
+        DS.savePeripheralPolicy({
+          name,
+          printer: document.getElementById("pol_printer").value,
+          burner: document.getElementById("pol_burner").value,
+          bluetooth: document.getElementById("pol_bluetooth").value,
+          camera: document.getElementById("pol_camera").value,
+          serial: document.getElementById("pol_serial").value,
+          remoteToolsMode: document.getElementById("pol_remoteToolsMode").value,
+          fileTransferMode: document.getElementById("pol_fileTransferMode").value,
+          remoteTools: checkedTools("pol_remoteTools"),
+          fileTransferTools: checkedTools("pol_fileTransferTools"),
+        });
+        window.closeAppDrawer();
+        alert("策略模板已保存（Mock）");
+      }
+      if (submit.dataset.drawerSubmit === "batch") {
+        const hosts = (submit.dataset.hosts || "").split(",").filter(Boolean);
+        if (!hosts.length) { alert("请先勾选终端"); return; }
+        DS.applyPeripheralBatch(hosts, document.getElementById("batchPolicy").value);
+        window.closeAppDrawer();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

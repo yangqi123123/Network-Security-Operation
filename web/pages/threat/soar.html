@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>自动化响应 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/threat.css">
+</head>
+<body class="threat-page soar-page" data-menu-key="threat.soar" data-page-section="威胁监测与响应" data-page-title="自动化响应">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <div class="content-tabs" role="tablist">
+          <button class="tab active" type="button" data-tab="tasks">响应任务列表</button>
+          <button class="tab" type="button" data-tab="playbooks">剧本模板</button>
+        </div>
+
+        <div id="panel-tasks" class="threat-tab-panel">
+          <section class="card filters" id="taskFilters">
+            <div class="filter-actions">
+              <label class="form-field"><span class="form-label">状态</span>
+                <select class="form-control" data-filter="status">
+                  <option value="">全部</option>
+                  <option>待执行</option><option>执行中</option><option>待复核</option><option>已关闭</option><option>失败</option>
+                </select>
+              </label>
+              <label class="form-field"><span class="form-label">关键字</span>
+                <input class="form-control" data-filter="keyword" placeholder="任务号/事件/执行人">
+              </label>
+              <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+              <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+            </div>
+          </section>
+
+          <section class="card user-list-card">
+            <div class="card-title-row user-toolbar">
+              <h2 class="card-title">响应任务列表</h2>
+              <div class="btn-row">
+                <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table user-table table-actions-sticky">
+                <thead>
+                  <tr>
+                    <th>任务号</th><th>关联事件</th><th>剧本</th><th>状态</th><th>执行人/系统</th><th>开始时间</th><th>耗时</th><th class="user-actions-col">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="taskBody"></tbody>
+              </table>
+            </div>
+            <div class="pagination" id="taskPager"></div>
+          </section>
+        </div>
+
+        <div id="panel-playbooks" class="threat-tab-panel panel-hidden">
+          <section class="card filters" id="playbookFilters">
+            <div class="filter-actions">
+              <label class="form-field"><span class="form-label">启用状态</span>
+                <select class="form-control" data-filter="enabled">
+                  <option value="">全部</option>
+                  <option value="启用">启用</option>
+                  <option value="停用">停用</option>
+                </select>
+              </label>
+              <label class="form-field"><span class="form-label">关键字</span>
+                <input class="form-control" data-filter="keyword" placeholder="名称/触发条件">
+              </label>
+              <button class="btn btn-secondary" type="button" data-action="reset-pb">重置</button>
+              <button class="btn btn-primary" type="button" data-action="search-pb">搜索</button>
+            </div>
+          </section>
+
+          <section class="card user-list-card">
+            <div class="card-title-row user-toolbar">
+              <h2 class="card-title">剧本模板</h2>
+              <div class="btn-row">
+                <button class="btn btn-primary" type="button" data-action="create-pb"><i class="fa-solid fa-plus"></i> 新建剧本</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table user-table table-actions-sticky">
+                <thead>
+                  <tr>
+                    <th>名称</th><th>触发条件</th><th>步骤数</th><th>对接系统</th><th>启用状态</th><th>更新时间</th><th class="user-actions-col">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="playbookBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/threat-mock.js"></script>
+  <script>
+    const T = window.Threat;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    const tagHtml = (meta) => {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    };
+    const infoItem = (label, value) => `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    let tab = "tasks";
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function switchTab(next) {
+      tab = next;
+      document.querySelectorAll(".content-tabs .tab").forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
+      document.getElementById("panel-tasks").classList.toggle("panel-hidden", tab !== "tasks");
+      document.getElementById("panel-playbooks").classList.toggle("panel-hidden", tab !== "playbooks");
+      render();
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("taskPager").innerHTML = html;
+    }
+
+    function renderTasks() {
+      const f = Object.fromEntries([...document.querySelectorAll("#taskFilters [data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      filtered = T.listTasks({ status: f.status || undefined, keyword: f.keyword || undefined });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("taskBody").innerHTML = rows.map((t) => `<tr>
+        <td>${dash(t.code)}</td><td>${dash(t.eventTitle)}</td><td>${dash(t.playbookName)}</td>
+        <td>${tagHtml(T.taskStatusTag(t.status))}</td><td>${dash(t.executor)}</td><td>${dash(t.startedAt)}</td><td>${dash(t.duration)}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="task-detail" data-id="${esc(t.id)}">详情</button>
+          <button class="table-action" type="button" data-row="run" data-id="${esc(t.id)}">执行/重试</button>
+          <button class="table-action" type="button" data-row="collect" data-id="${esc(t.id)}">回收结果</button>
+          <button class="table-action" type="button" data-row="close" data-id="${esc(t.id)}">复核关闭</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function renderPlaybooks() {
+      const f = Object.fromEntries([...document.querySelectorAll("#playbookFilters [data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      const rows = T.listPlaybooks({ enabled: f.enabled || undefined, keyword: f.keyword || undefined });
+      document.getElementById("playbookBody").innerHTML = rows.map((p) => {
+        const tags = (p.systems || []).map((s) => `<span class="tag">${esc(s)}</span>`).join(" ");
+        return `<tr>
+          <td>${dash(p.name)}</td><td>${dash(p.trigger)}</td><td>${dash(p.stepCount)}</td>
+          <td><div class="threat-sys-tags">${tags || "-"}</div></td>
+          <td>${tagHtml(p.enabled ? { label: "启用", tagClass: "success" } : { label: "停用", tagClass: "danger" })}</td>
+          <td>${dash(p.updatedAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="pb-detail" data-id="${esc(p.id)}">详情</button>
+            <button class="table-action" type="button" data-row="pb-edit" data-id="${esc(p.id)}">编辑</button>
+            <button class="table-action" type="button" data-row="pb-toggle" data-id="${esc(p.id)}">${p.enabled ? "停用" : "启用"}</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function render() {
+      if (tab === "tasks") renderTasks();
+      else renderPlaybooks();
+    }
+
+    function openTaskDetail(id) {
+      const t = T.getTask(id);
+      if (!t) return;
+      const timeline = (t.timeline || []).map((x) => `<div class="task"><span class="dot" style="background:var(--primary)"></span><div><strong>${esc(x.action)}</strong><div class="helper-text">${dash(x.time)} · ${dash(x.actor)}</div><div>${dash(x.note)}</div></div></div>`).join("") || "-";
+      const body = `<section class="detail-section"><h3 class="detail-title">基础信息</h3><div class="detail-grid user-detail-grid">
+        ${infoItem("任务号", dash(t.code))}${infoItem("关联事件", dash(t.eventTitle))}${infoItem("剧本", dash(t.playbookName))}
+        ${infoItem("状态", tagHtml(T.taskStatusTag(t.status)))}${infoItem("执行人/系统", dash(t.executor))}
+        ${infoItem("开始时间", dash(t.startedAt))}${infoItem("耗时", dash(t.duration))}${infoItem("备注信息", "-")}
+      </div></section>
+      <section class="detail-section threat-detail-block"><h3 class="detail-title">执行时间线</h3><div class="timeline">${timeline}</div></section>`;
+      window.openAppDrawer({ title: "任务详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openPlaybookForm(mode, id) {
+      const p = id ? T.getPlaybook(id) : null;
+      const selected = new Set(p?.systems || []);
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">名称</span><input class="form-control" data-f="name" value="${esc(p?.name || "")}"></label>
+        <label class="form-field form-item"><span class="form-label form-required">触发条件</span><input class="form-control" data-f="trigger" value="${esc(p?.trigger || "")}"></label>
+        <div class="form-item"><span class="form-label">对接系统</span>
+          <div class="threat-sys-tags" style="margin-top:8px">${T.SYSTEMS.map((s) => `<label><input type="checkbox" data-sys="${esc(s)}"${selected.has(s) ? " checked" : ""}> ${esc(s)}</label>`).join("")}</div>
+        </div>
+        <label class="form-field form-item"><span class="form-label">步骤（每行一步）</span><textarea class="form-control textarea" data-f="steps">${esc((p?.steps || ["匹配", "联动", "通知", "关闭"]).join("\n"))}</textarea></label>`;
+      window.openAppDrawer({
+        title: mode === "create" ? "新建剧本" : "编辑剧本",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-confirm-pb="${esc(id || "")}">确认</button>`,
+      });
+    }
+
+    function openPlaybookDetail(id) {
+      const p = T.getPlaybook(id);
+      if (!p) return;
+      const tags = (p.systems || []).map((s) => `<span class="tag">${esc(s)}</span>`).join(" ");
+      const steps = (p.steps || []).map((s, i) => `<li>${i + 1}. ${dash(s)}</li>`).join("");
+      const body = `<section class="detail-section"><h3 class="detail-title">基础信息</h3><div class="detail-grid user-detail-grid">
+        ${infoItem("名称", dash(p.name))}${infoItem("触发条件", dash(p.trigger))}${infoItem("步骤数", dash(p.stepCount))}
+        ${infoItem("启用状态", tagHtml(p.enabled ? { label: "启用", tagClass: "success" } : { label: "停用", tagClass: "danger" }))}
+        ${infoItem("更新时间", dash(p.updatedAt))}${infoItem("对接系统", `<div class="threat-sys-tags">${tags || "-"}</div>`)}
+        ${infoItem("备注信息", "-")}
+      </div></section>
+      <section class="detail-section threat-detail-block"><h3 class="detail-title">步骤</h3><ol>${steps}</ol></section>`;
+      window.openAppDrawer({ title: "剧本详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    switchTab("tasks");
+
+    document.addEventListener("click", (event) => {
+      const tabBtn = event.target.closest("[data-tab]");
+      if (tabBtn) switchTab(tabBtn.dataset.tab);
+
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") { document.querySelectorAll("#taskFilters [data-filter]").forEach((el) => { el.value = ""; }); currentPage = 1; render(); }
+      if (action === "search-pb") render();
+      if (action === "reset-pb") { document.querySelectorAll("#playbookFilters [data-filter]").forEach((el) => { el.value = ""; }); render(); }
+      if (action === "refresh") render();
+      if (action === "create-pb") openPlaybookForm("create");
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "task-detail") openTaskDetail(id);
+        if (rowBtn.dataset.row === "run") { T.runTask(id); render(); }
+        if (rowBtn.dataset.row === "collect") { T.completeTask(id, { action: "collect" }); render(); }
+        if (rowBtn.dataset.row === "close") { T.completeTask(id, { action: "close" }); render(); }
+        if (rowBtn.dataset.row === "pb-detail") openPlaybookDetail(id);
+        if (rowBtn.dataset.row === "pb-edit") openPlaybookForm("edit", id);
+        if (rowBtn.dataset.row === "pb-toggle") { T.togglePlaybook(id); render(); }
+      }
+
+      const confirm = event.target.closest("[data-confirm-pb]");
+      if (confirm) {
+        const drawer = document.querySelector(".drawer-body") || document.getElementById("drawerBody");
+        const name = drawer?.querySelector("[data-f='name']")?.value || "";
+        const trigger = drawer?.querySelector("[data-f='trigger']")?.value || "";
+        const steps = (drawer?.querySelector("[data-f='steps']")?.value || "").split(/\n/).map((s) => s.trim()).filter(Boolean);
+        const systems = [...(drawer?.querySelectorAll("[data-sys]:checked") || [])].map((el) => el.dataset.sys);
+        T.savePlaybook({ id: confirm.dataset.confirmPb || undefined, name, trigger, steps, systems });
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

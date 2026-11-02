@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>进程告警规则 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+  <link rel="stylesheet" href="../../assets/css/device-mgmt.css">
+</head>
+<body class="alarm-page" data-menu-key="device.processes" data-page-section="设备管理" data-page-title="进程告警规则">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div class="btn-row">
+            <a class="btn btn-secondary" href="./processes.html"><i class="fa-solid fa-arrow-left"></i> 返回进程列表</a>
+          </div>
+        </section>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">规则名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">匹配进程</span><input class="form-control" data-filter="matchName" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">告警等级</span>
+              <select class="form-control" data-filter="level">
+                <option value="">全部</option>
+                <option>告警</option>
+                <option>预警</option>
+                <option>提醒</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">状态</span>
+              <select class="form-control" data-filter="enabled">
+                <option value="">全部</option>
+                <option value="true">启用</option>
+                <option value="false">停用</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">进程告警规则</h2>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新增规则</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>规则名称</th>
+                  <th>匹配进程</th>
+                  <th>触发条件</th>
+                  <th>等级</th>
+                  <th>通知方式</th>
+                  <th>通知对象</th>
+                  <th>升级</th>
+                  <th>启用</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="ruleBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="rulePager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const DM = window.DeviceMgmt;
+    let filter = {};
+    let rows = [];
+    let page = 1;
+    const pageSize = 10;
+    const notificationDirectory = [
+      { id: "ops", name: "运维一组", people: [{ id: "zhang", name: "张三" }, { id: "li", name: "李四" }] },
+      { id: "net", name: "网络组", people: [{ id: "zhao", name: "赵工" }, { id: "chen", name: "陈工" }] },
+      { id: "dba", name: "DBA组", people: [{ id: "wang", name: "王工" }, { id: "sun", name: "孙工" }] },
+      { id: "app", name: "应用运维", people: [{ id: "zhou", name: "周工" }, { id: "wu", name: "吴工" }] },
+    ];
+    let wizard = {
+      step: 1,
+      mode: "create",
+      id: null,
+      departments: [],
+      people: [],
+      openMulti: null,
+    };
+
+    function levelTag(level) {
+      const cls = level === "告警" ? "danger" : level === "预警" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+
+    function triggerText(r) {
+      const parts = [];
+      if (r.onStart) parts.push("启动");
+      if (r.onZombie) parts.push("僵死");
+      return parts.join(" / ") || "-";
+    }
+
+    function applyFilter() {
+      const all = DM.listProcessAlertRules();
+      rows = all.filter((r) => {
+        if (filter.name && !String(r.name || "").includes(filter.name)) return false;
+        if (filter.matchName && !String(r.matchName || "").includes(filter.matchName)) return false;
+        if (filter.level && r.level !== filter.level) return false;
+        if (filter.enabled === "true" && !r.enabled) return false;
+        if (filter.enabled === "false" && r.enabled) return false;
+        return true;
+      });
+      page = 1;
+      render();
+    }
+
+    function render() {
+      const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+      page = Math.min(page, totalPages);
+      const slice = rows.slice((page - 1) * pageSize, page * pageSize);
+      document.getElementById("ruleBody").innerHTML = slice.map((r) => `
+        <tr data-id="${r.id}">
+          <td><strong>${r.name || "-"}</strong></td>
+          <td>${r.matchName || "-"}</td>
+          <td>${triggerText(r)}</td>
+          <td>${levelTag(r.level)}</td>
+          <td>${r.channel || r.method || "-"}</td>
+          <td>${r.notifyTo || "-"}</td>
+          <td>${r.escalate ? `${r.escalateHours || "-"}h → ${r.escalateTo || "-"}` : "关闭"}</td>
+          <td><button class="status-switch ${r.enabled ? "on" : "off"}" type="button" data-toggle="${r.id}">${r.enabled ? "启用" : "停用"}</button></td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-rule="edit" data-id="${r.id}">编辑</button>
+            <button class="table-action status-danger" type="button" data-rule="delete" data-id="${r.id}">删除</button>
+          </td>
+        </tr>`).join("") || `<tr><td colspan="9" class="dm-empty">暂无规则</td></tr>`;
+
+      let pager = `<span>共 <strong>${rows.length}</strong> 条记录，每页 10 条</span>`;
+      pager += `<span class="page-item${page === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= totalPages; i += 1) pager += `<span class="page-item${i === page ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      pager += `<span class="page-item${page === totalPages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("rulePager").innerHTML = pager;
+    }
+
+    function wizardMarkup(rule) {
+      const r = rule || {};
+      const method = r.channel || r.method || "邮件";
+      return `<div class="alarm-wizard">
+        <div class="alarm-wizard-steps">
+          <button class="alarm-wizard-step active" type="button" data-wizard-step="1"><span class="alarm-step-index">1</span>输入基本信息</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="2"><span class="alarm-step-index">2</span>触发条件</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="3"><span class="alarm-step-index">3</span>发送方式</button>
+          <button class="alarm-wizard-step" type="button" data-wizard-step="4"><span class="alarm-step-index">4</span>保存预览</button>
+        </div>
+        <div class="alarm-wizard-content">
+          <section data-wizard-panel="1">
+            <div class="form-grid-2">
+              <label class="form-field form-item"><span class="form-label form-required">规则名称</span>
+                <input class="form-control" data-wizard-field="name" value="${r.name || ""}" placeholder="请输入规则名称"></label>
+              <label class="form-field form-item"><span class="form-label form-required">匹配进程名</span>
+                <input class="form-control" data-wizard-field="matchName" value="${r.matchName || ""}" placeholder="如 mysqld / nginx"></label>
+              <label class="form-field form-item"><span class="form-label form-required">告警等级</span>
+                <select class="form-control" data-wizard-field="level">
+                  ${["告警", "预警", "提醒"].map((lv) => `<option ${(r.level || "告警") === lv ? "selected" : ""}>${lv}</option>`).join("")}
+                </select></label>
+              <label class="form-field form-item"><span class="form-label">适用设备</span>
+                <select class="form-control" data-wizard-field="deviceScope">
+                  <option ${!r.deviceScope || r.deviceScope === "全部" ? "selected" : ""}>全部</option>
+                  ${DM.listDevices().filter((d) => String(d.category).includes("server")).map((d) =>
+                    `<option ${r.deviceScope === d.name ? "selected" : ""}>${d.name}</option>`).join("")}
+                </select></label>
+            </div>
+            <label class="form-field form-item" style="display:block;margin-top:4px">
+              <span class="form-label">规则说明</span>
+              <textarea class="form-control textarea" data-wizard-field="description" placeholder="请输入规则说明" style="min-height:96px">${r.description || ""}</textarea>
+            </label>
+          </section>
+          <section class="hidden" data-wizard-panel="2">
+            <div class="alarm-tip">配置进程启停相关触发条件：至少勾选一项触发条件。</div>
+            <div class="dm-trigger-list">
+              <label class="switch-line"><span>进程启动时告警</span>
+                <input type="checkbox" data-wizard-field="onStart" ${r.onStart !== false ? "checked" : ""}></label>
+              <label class="switch-line"><span>进程僵死 / 死亡时告警</span>
+                <input type="checkbox" data-wizard-field="onZombie" ${r.onZombie !== false ? "checked" : ""}></label>
+            </div>
+          </section>
+          <section class="hidden" data-wizard-panel="3">
+            <div class="alarm-tip">请设置报警通知的部门、人员和通知方式（邮件 / 微信 / 钉钉），并可配置超时升级。</div>
+            <div class="alarm-send-section">
+              <h3 class="alarm-summary-title">发送方式</h3>
+              <div class="alarm-send-grid">
+                <div class="form-field form-item">
+                  <span class="form-label form-required">部门</span>
+                  <div class="alarm-tag-select" data-multi-select="departments">
+                    <button class="alarm-tag-control" type="button" data-multi-trigger="departments" aria-expanded="false"><span data-multi-value="departments"></span><i class="fa-solid fa-chevron-down"></i></button>
+                    <div class="alarm-tag-dropdown" data-multi-options="departments"></div>
+                  </div>
+                </div>
+                <div class="form-field form-item">
+                  <span class="form-label form-required">通知人员</span>
+                  <div class="alarm-tag-select" data-multi-select="people">
+                    <button class="alarm-tag-control" type="button" data-multi-trigger="people" aria-expanded="false"><span data-multi-value="people"></span><i class="fa-solid fa-chevron-down"></i></button>
+                    <div class="alarm-tag-dropdown" data-multi-options="people"></div>
+                  </div>
+                </div>
+                <label class="form-field form-item"><span class="form-label form-required">通知方式</span>
+                  <select class="form-control" data-wizard-field="method">
+                    <option value="邮件" ${method === "邮件" ? "selected" : ""}>邮件</option>
+                    <option value="微信" ${method === "微信" ? "selected" : ""}>微信</option>
+                    <option value="钉钉" ${method === "钉钉" ? "selected" : ""}>钉钉</option>
+                    <option value="邮件+钉钉" ${method === "邮件+钉钉" ? "selected" : ""}>邮件+钉钉</option>
+                    <option value="邮件+微信+钉钉" ${method === "邮件+微信+钉钉" ? "selected" : ""}>邮件+微信+钉钉</option>
+                  </select>
+                </label>
+                <label class="form-field form-item"><span class="form-label">启用升级</span>
+                  <select class="form-control" data-wizard-field="escalate">
+                    <option value="true" ${r.escalate ? "selected" : ""}>启用</option>
+                    <option value="false" ${!r.escalate ? "selected" : ""}>关闭</option>
+                  </select>
+                </label>
+                <label class="form-field form-item"><span class="form-label">升级小时数</span>
+                  <input class="form-control" data-wizard-field="escalateHours" value="${r.escalateHours || "2"}" inputmode="numeric"></label>
+                <label class="form-field form-item"><span class="form-label">升级对象</span>
+                  <input class="form-control" data-wizard-field="escalateTo" value="${r.escalateTo || ""}" placeholder="上一级领导"></label>
+              </div>
+            </div>
+          </section>
+          <section class="hidden" data-wizard-panel="4">
+            <div class="alarm-tip">确认已填写信息，提交保存：</div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">基本信息</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">规则名称</th><td data-summary="name">-</td><th class="summary-label">匹配进程</th><td data-summary="matchName">-</td></tr>
+                <tr><th class="summary-label">告警等级</th><td data-summary="level">-</td><th class="summary-label">适用设备</th><td data-summary="deviceScope">-</td></tr>
+                <tr><th class="summary-label">规则说明</th><td colspan="3" data-summary="description">-</td></tr>
+              </tbody></table>
+            </div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">触发条件</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">启动告警</th><td data-summary="onStart">-</td><th class="summary-label">僵死告警</th><td data-summary="onZombie">-</td></tr>
+              </tbody></table>
+            </div>
+            <div class="alarm-summary-section"><h3 class="alarm-summary-title">发送方式</h3>
+              <table class="alarm-summary-table"><tbody>
+                <tr><th class="summary-label">部门</th><td data-summary="departments">-</td><th class="summary-label">通知人员</th><td data-summary="people">-</td></tr>
+                <tr><th class="summary-label">通知方式</th><td data-summary="method">-</td><th class="summary-label">告警升级</th><td data-summary="escalate">-</td></tr>
+              </tbody></table>
+            </div>
+          </section>
+        </div>
+      </div>`;
+    }
+
+    function allPeople() {
+      return notificationDirectory.flatMap((item) => item.people);
+    }
+
+    function namesByIds(ids, source) {
+      return ids.map((id) => source.find((item) => item.id === id)?.name).filter(Boolean).join("、") || "-";
+    }
+
+    function renderMultiSelects() {
+      const body = document.getElementById("drawerBody");
+      if (!body) return;
+      const allowedPeople = notificationDirectory
+        .filter((item) => wizard.departments.includes(item.id))
+        .flatMap((item) => item.people);
+      const render = (key, source, placeholder) => {
+        const component = body.querySelector(`[data-multi-select="${key}"]`);
+        if (!component) return;
+        const value = component.querySelector(`[data-multi-value="${key}"]`);
+        const dropdown = component.querySelector(`[data-multi-options="${key}"]`);
+        const control = component.querySelector("[data-multi-trigger]");
+        const selected = wizard[key].map((id) => source.find((item) => item.id === id)).filter(Boolean);
+        value.innerHTML = selected.length
+          ? selected.map((item) => `<span class="alarm-selection-tag">${item.name}<span role="button" tabindex="0" data-tag-remove="${key}" data-tag-id="${item.id}">×</span></span>`).join("")
+          : `<span class="alarm-tag-placeholder">${placeholder}</span>`;
+        dropdown.innerHTML = source.length
+          ? source.map((item) => `<button class="alarm-tag-option ${wizard[key].includes(item.id) ? "selected" : ""}" type="button" data-multi-option="${key}" data-option-id="${item.id}"><span>${item.name}</span>${wizard[key].includes(item.id) ? '<i class="fa-solid fa-check"></i>' : ""}</button>`).join("")
+          : '<span class="alarm-tag-empty">请先选择部门</span>';
+        component.classList.toggle("open", wizard.openMulti === key);
+        control?.setAttribute("aria-expanded", String(wizard.openMulti === key));
+      };
+      render("departments", notificationDirectory, "请选择部门");
+      render("people", allowedPeople, wizard.departments.length ? "请选择通知人员" : "请先选择部门");
+      wizard.people = wizard.people.filter((id) => allowedPeople.some((item) => item.id === id));
+    }
+
+    function resolveDepartmentsPeople(rule) {
+      if (Array.isArray(rule?.departmentIds) && rule.departmentIds.length) {
+        return {
+          departments: [...rule.departmentIds],
+          people: Array.isArray(rule.peopleIds) ? [...rule.peopleIds] : [],
+        };
+      }
+      const notify = String(rule?.notifyTo || "");
+      const departments = [];
+      const people = [];
+      notificationDirectory.forEach((dept) => {
+        if (notify.includes(dept.name)) departments.push(dept.id);
+        dept.people.forEach((p) => {
+          if (notify.includes(p.name)) {
+            people.push(p.id);
+            if (!departments.includes(dept.id)) departments.push(dept.id);
+          }
+        });
+      });
+      if (!departments.length && notify) {
+        if (/DBA/i.test(notify)) departments.push("dba");
+        else if (/应用/.test(notify)) departments.push("app");
+        else if (/网络/.test(notify)) departments.push("net");
+        else departments.push("ops");
+      }
+      return { departments, people };
+    }
+
+    function getField(key) {
+      const el = document.querySelector(`[data-wizard-field="${key}"]`);
+      if (!el) return "";
+      if (el.type === "checkbox") return el.checked;
+      return el.value;
+    }
+
+    function syncWizardUi() {
+      document.querySelectorAll("[data-wizard-step]").forEach((btn) => {
+        const n = Number(btn.dataset.wizardStep);
+        btn.classList.toggle("active", n === wizard.step);
+        btn.classList.toggle("done", n < wizard.step);
+      });
+      document.querySelectorAll("[data-wizard-panel]").forEach((panel) => {
+        panel.classList.toggle("hidden", Number(panel.dataset.wizardPanel) !== wizard.step);
+      });
+      const footer = document.getElementById("drawerFooter");
+      if (!footer) return;
+      footer.innerHTML = `
+        <button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+        ${wizard.step > 1 ? `<button class="btn btn-secondary" type="button" data-wizard-nav="prev">上一步</button>` : ""}
+        ${wizard.step < 4
+          ? `<button class="btn btn-primary" type="button" data-wizard-nav="next">下一步</button>`
+          : `<button class="btn btn-primary" type="button" data-wizard-nav="save">保存</button>`}`;
+      if (wizard.step === 3) renderMultiSelects();
+      if (wizard.step === 4) updateSummary();
+    }
+
+    function updateSummary() {
+      const set = (k, v) => {
+        const el = document.querySelector(`[data-summary="${k}"]`);
+        if (el) el.textContent = v || "-";
+      };
+      const escalate = getField("escalate") === true || getField("escalate") === "true";
+      set("name", getField("name"));
+      set("matchName", getField("matchName"));
+      set("level", getField("level"));
+      set("deviceScope", getField("deviceScope"));
+      set("description", getField("description"));
+      set("onStart", getField("onStart") ? "是" : "否");
+      set("onZombie", getField("onZombie") ? "是" : "否");
+      set("departments", namesByIds(wizard.departments, notificationDirectory));
+      set("people", namesByIds(wizard.people, allPeople()));
+      set("method", getField("method"));
+      set("escalate", escalate ? `${getField("escalateHours") || "-"} 小时 → ${getField("escalateTo") || "上级"}` : "关闭");
+    }
+
+    function markValidation(field, message) {
+      if (!field) return;
+      field.classList.add("error");
+      const host = field.closest(".form-field") || field.parentElement;
+      if (!host || host.querySelector(".form-error")) return;
+      const err = document.createElement("span");
+      err.className = "form-error";
+      err.textContent = message;
+      host.appendChild(err);
+    }
+
+    function validateStep(step) {
+      const panel = document.querySelector(`[data-wizard-panel="${step}"]`);
+      if (!panel) return true;
+      panel.querySelectorAll(".error").forEach((el) => el.classList.remove("error"));
+      panel.querySelectorAll(".form-error").forEach((el) => el.remove());
+      let ok = true;
+      const require = (key, msg) => {
+        const field = panel.querySelector(`[data-wizard-field="${key}"]`);
+        const val = field?.type === "checkbox" ? field.checked : (field?.value || "").trim();
+        if (!field || (field.type !== "checkbox" && !val)) {
+          markValidation(field, msg);
+          ok = false;
+        }
+      };
+      if (step === 1) {
+        require("name", "请输入规则名称");
+        require("matchName", "请输入匹配进程名");
+        require("level", "请选择告警等级");
+      }
+      if (step === 2) {
+        if (!getField("onStart") && !getField("onZombie")) {
+          const tip = panel.querySelector(".alarm-tip");
+          if (tip) tip.style.color = "#ef4444";
+          ok = false;
+        } else {
+          const tip = panel.querySelector(".alarm-tip");
+          if (tip) tip.style.color = "";
+        }
+      }
+      if (step === 3) {
+        if (!wizard.departments.length) {
+          markValidation(panel.querySelector('[data-multi-select="departments"] .alarm-tag-control'), "请选择部门");
+          ok = false;
+        }
+        if (!wizard.people.length) {
+          markValidation(panel.querySelector('[data-multi-select="people"] .alarm-tag-control'), "请选择通知人员");
+          ok = false;
+        }
+        require("method", "请选择通知方式");
+      }
+      return ok;
+    }
+
+    function openWizard(mode, rule) {
+      const resolved = resolveDepartmentsPeople(rule);
+      wizard = {
+        step: 1,
+        mode,
+        id: rule?.id || null,
+        departments: resolved.departments,
+        people: resolved.people,
+        openMulti: null,
+      };
+      window.openAppDrawer({
+        title: mode === "edit" ? "编辑进程告警规则" : "新增进程告警规则",
+        body: wizardMarkup(rule),
+        footer: "",
+      });
+      syncWizardUi();
+    }
+
+    function collectPayload() {
+      const deptNames = namesByIds(wizard.departments, notificationDirectory);
+      const peopleNames = namesByIds(wizard.people, allPeople());
+      return {
+        id: wizard.id || undefined,
+        name: getField("name"),
+        matchName: getField("matchName"),
+        level: getField("level"),
+        deviceScope: getField("deviceScope"),
+        description: getField("description"),
+        onStart: !!getField("onStart"),
+        onZombie: !!getField("onZombie"),
+        channel: getField("method"),
+        method: getField("method"),
+        notifyTo: peopleNames === "-" ? deptNames : peopleNames,
+        departmentIds: [...wizard.departments],
+        peopleIds: [...wizard.people],
+        escalate: getField("escalate") === true || getField("escalate") === "true",
+        escalateHours: getField("escalateHours"),
+        escalateTo: getField("escalateTo"),
+        enabled: true,
+      };
+    }
+
+    document.addEventListener("click", (e) => {
+      const action = e.target.closest("[data-action]")?.dataset.action;
+      if (action === "create") openWizard("create", null);
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        filter = {};
+        applyFilter();
+      }
+      if (action === "search") {
+        filter = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+        applyFilter();
+      }
+      const pn = e.target.closest("[data-page-number]");
+      const pa = e.target.closest("[data-page-action]");
+      if (pn) { page = Number(pn.dataset.pageNumber); render(); }
+      if (pa) {
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        page = pa.dataset.pageAction === "prev" ? Math.max(1, page - 1) : Math.min(totalPages, page + 1);
+        render();
+      }
+      const toggle = e.target.closest("[data-toggle]");
+      if (toggle) { DM.toggleProcessAlertRule(toggle.dataset.toggle); applyFilter(); }
+      const ruleAct = e.target.closest("[data-rule]");
+      if (ruleAct) {
+        const id = ruleAct.dataset.id;
+        if (ruleAct.dataset.rule === "edit") openWizard("edit", DM.getProcessAlertRule(id));
+        if (ruleAct.dataset.rule === "delete") {
+          window.openAppConfirm({
+            title: "提示",
+            message: "确认删除该进程告警规则吗？",
+            onConfirm: () => { DM.removeProcessAlertRule(id); applyFilter(); },
+          });
+        }
+      }
+      const nav = e.target.closest("[data-wizard-nav]");
+      if (nav) {
+        if (nav.dataset.wizardNav === "prev") {
+          wizard.step = Math.max(1, wizard.step - 1);
+          syncWizardUi();
+        }
+        if (nav.dataset.wizardNav === "next") {
+          if (!validateStep(wizard.step)) return;
+          wizard.step = Math.min(4, wizard.step + 1);
+          syncWizardUi();
+        }
+        if (nav.dataset.wizardNav === "save") {
+          if (!validateStep(1) || !validateStep(2) || !validateStep(3)) {
+            wizard.step = 1;
+            syncWizardUi();
+            return;
+          }
+          DM.saveProcessAlertRule(collectPayload());
+          document.querySelector("[data-drawer-close]")?.click();
+          applyFilter();
+        }
+      }
+      const stepBtn = e.target.closest("[data-wizard-step]");
+      if (stepBtn) {
+        const target = Number(stepBtn.dataset.wizardStep);
+        if (target < wizard.step) {
+          wizard.step = target;
+          syncWizardUi();
+        } else if (target > wizard.step) {
+          for (let s = wizard.step; s < target; s += 1) {
+            if (!validateStep(s)) { syncWizardUi(); return; }
+            wizard.step = s + 1;
+          }
+          syncWizardUi();
+        }
+      }
+
+      const tagRemove = e.target.closest("[data-tag-remove]");
+      if (tagRemove) {
+        e.stopPropagation();
+        const key = tagRemove.dataset.tagRemove;
+        wizard[key] = wizard[key].filter((id) => id !== tagRemove.dataset.tagId);
+        renderMultiSelects();
+      }
+      const multiOption = e.target.closest("[data-multi-option]");
+      if (multiOption) {
+        const key = multiOption.dataset.multiOption;
+        const id = multiOption.dataset.optionId;
+        wizard[key] = wizard[key].includes(id)
+          ? wizard[key].filter((item) => item !== id)
+          : wizard[key].concat(id);
+        wizard.openMulti = key;
+        renderMultiSelects();
+      }
+      const multiTrigger = e.target.closest("[data-multi-trigger]");
+      if (multiTrigger && !tagRemove) {
+        const key = multiTrigger.dataset.multiTrigger;
+        if (key !== "people" || wizard.departments.length) {
+          wizard.openMulti = wizard.openMulti === key ? null : key;
+        }
+        renderMultiSelects();
+      } else if (!multiOption && !multiTrigger && !tagRemove && !e.target.closest("[data-multi-select]")) {
+        if (wizard.openMulti) {
+          wizard.openMulti = null;
+          renderMultiSelects();
+        }
+      }
+    });
+
+    applyFilter();
+  </script>
+</body>
+</html>

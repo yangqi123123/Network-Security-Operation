@@ -1,0 +1,30 @@
+/* 电子屏防护：告警摘要、通道摘要 */
+.sp-alarm-list { margin: 0; padding: 0; list-style: none; }
+.sp-alarm-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--divider);
+  font-size: 14px;
+}
+.sp-alarm-list li:last-child { border-bottom: none; }
+.sp-alarm-meta { color: var(--text-secondary); font-size: 12px; }
+.sp-channel-cats { font-size: 13px; color: var(--text-primary); line-height: 1.4; }
+.sp-latency {
+  font-variant-numeric: tabular-nums;
+  font-family: "DIN Alternate", Arial, sans-serif;
+}
+.sp-check-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+.sp-check-grid label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+}

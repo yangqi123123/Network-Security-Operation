@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据库监测管理 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="dbm-page" data-menu-key="monitor.database" data-page-section="性能监测" data-page-title="数据库监测管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">数据库监测管理</h1>
+            <p class="page-desc">统一监测 Oracle、SQL Server、MySQL 等数据库运行状态与性能指标。</p>
+          </div>
+        </section>
+
+        <nav class="tabs dbm-tabs" id="dbmTabs">
+          <button type="button" class="tab active" data-tab="overview">总览</button>
+          <button type="button" class="tab" data-tab="Oracle">Oracle</button>
+          <button type="button" class="tab" data-tab="SQL Server">SQL Server</button>
+          <button type="button" class="tab" data-tab="MySQL">MySQL</button>
+        </nav>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">实例名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field" id="typeFilterWrap"><span class="form-label">库类型</span>
+              <select class="form-control" data-filter="type">
+                <option value="">全部</option>
+                <option value="Oracle">Oracle</option>
+                <option value="Oracle RAC">Oracle RAC</option>
+                <option value="SQL Server">SQL Server</option>
+                <option value="MySQL">MySQL</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">监测状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="normal">正常</option>
+                <option value="alert">告警</option>
+                <option value="offline">离线</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">所属主机</span><input class="form-control" data-filter="host" placeholder="请输入"></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="sm-summary-grid">
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>实例状态分布</h3></div>
+            <div class="sm-chart-el" id="dbmPie"></div>
+          </article>
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>平均会话/连接趋势</h3></div>
+            <div class="sm-chart-el" id="dbmTrend"></div>
+          </article>
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>各类型实例数</h3></div>
+            <div class="sm-chart-el" id="dbmBar"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title" id="dbmListTitle">数据库实例列表</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th class="check-cell"><input type="checkbox" data-select-all></th>
+                  <th>实例名称</th>
+                  <th>库类型</th>
+                  <th>版本</th>
+                  <th>所属主机 / IP</th>
+                  <th>会话/连接数</th>
+                  <th>表空间/磁盘%</th>
+                  <th>监测状态</th>
+                  <th>最近采样</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dbmTableBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dbmPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/database-monitor-mock.js"></script>
+  <script>
+    const DM = window.DatabaseMonitor;
+    const charts = { pie: null, trend: null, bar: null };
+    let allRows = DM.listInstances();
+    let activeTab = "overview";
+    let filtered = allRows.slice();
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function getFilters() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function applyFilter() {
+      const f = getFilters();
+      let base = DM.filterByTab(allRows, activeTab);
+      filtered = base.filter((d) => {
+        const st = DM.getStatus(d).key;
+        const typeOk = !f.type || d.type === f.type;
+        return (!f.name || d.name.includes(f.name))
+          && typeOk
+          && (!f.status || st === f.status)
+          && (!f.host || d.host.includes(f.host) || d.ip.includes(f.host));
+      });
+      currentPage = 1;
+      renderTable();
+      renderSummary();
+    }
+
+    function renderSummary() {
+      const scope = DM.filterByTab(allRows, activeTab);
+      const summary = DM.aggregateSummary(scope);
+      if (!charts.pie) charts.pie = echarts.init(document.getElementById("dbmPie"));
+      if (!charts.trend) charts.trend = echarts.init(document.getElementById("dbmTrend"));
+      if (!charts.bar) charts.bar = echarts.init(document.getElementById("dbmBar"));
+      charts.pie.setOption(DM.pieOption(summary.pie));
+      charts.trend.setOption(DM.areaOption(summary.sessionTrend.times, summary.sessionTrend.values, "会话"));
+      charts.bar.setOption(DM.barOption(summary.typeBars));
+    }
+
+    function renderPager() {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const items = [];
+      items.push(`<span>共 <strong>${filtered.length}</strong> 条记录，每页 10 条</span>`);
+      items.push(`<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`);
+      for (let i = 1; i <= totalPages; i += 1) {
+        items.push(`<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`);
+      }
+      items.push(`<span class="page-item${currentPage === totalPages ? " disabled" : ""}" data-page-action="next">›</span>`);
+      document.getElementById("dbmPager").innerHTML = items.join("");
+    }
+
+    function renderTable() {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dbmTableBody").innerHTML = pageRows.map((d) => {
+        const st = DM.getStatus(d);
+        return `<tr data-db-id="${d.id}">
+          <td class="check-cell"><input type="checkbox"></td>
+          <td><strong>${d.name}</strong></td>
+          <td><span class="tag">${d.type}</span></td>
+          <td>${d.version}</td>
+          <td>${d.host}<br><small class="status-muted">${d.ip}</small></td>
+          <td>${d.online ? d.sessions : "—"}</td>
+          <td>${d.online ? d.spaceUsage + "%" : "—"}</td>
+          <td><span class="tag ${st.tagClass}">${st.label}</span></td>
+          <td>${d.sampledAt}</td>
+          <td class="user-actions-col"><button class="table-action" type="button" data-view="${d.id}">查看</button></td>
+        </tr>`;
+      }).join("");
+      renderPager();
+    }
+
+    function setTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll("#dbmTabs .tab").forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
+      const titles = { overview: "数据库实例列表", Oracle: "Oracle / RAC 实例", "SQL Server": "SQL Server 实例", MySQL: "MySQL 实例" };
+      document.getElementById("dbmListTitle").textContent = titles[tab] || "数据库实例列表";
+      document.getElementById("typeFilterWrap").style.display = tab === "overview" ? "" : "none";
+      if (tab !== "overview") document.querySelector('[data-filter="type"]').value = "";
+      applyFilter();
+    }
+
+    function goDetail(id) {
+      location.href = `./database-detail.html?id=${encodeURIComponent(id)}`;
+    }
+
+    setTab("overview");
+
+    document.addEventListener("click", (event) => {
+      const tabBtn = event.target.closest("#dbmTabs [data-tab]");
+      if (tabBtn) setTab(tabBtn.dataset.tab);
+
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") applyFilter();
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        applyFilter();
+      }
+      const view = event.target.closest("[data-view]");
+      if (view) goDetail(view.dataset.view);
+
+      const pageNumber = event.target.closest("[data-page-number]");
+      const pageAction = event.target.closest("[data-page-action]");
+      if (pageNumber) {
+        currentPage = Number(pageNumber.dataset.pageNumber);
+        renderTable();
+      }
+      if (pageAction && !pageAction.classList.contains("disabled")) {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        currentPage = pageAction.dataset.pageAction === "prev"
+          ? Math.max(1, currentPage - 1)
+          : Math.min(totalPages, currentPage + 1);
+        renderTable();
+      }
+      const row = event.target.closest("#dbmTableBody tr");
+      if (row && !event.target.closest("button, input, select, a")) goDetail(row.dataset.dbId);
+    });
+
+    window.addEventListener("resize", () => {
+      charts.pie?.resize();
+      charts.trend?.resize();
+      charts.bar?.resize();
+    });
+  </script>
+</body>
+</html>

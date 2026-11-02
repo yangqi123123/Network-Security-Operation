@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>网络运行报表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/report.css">
+</head>
+<body class="report-page" data-menu-key="report.network" data-page-section="报表管理" data-page-title="网络运行报表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters rpt-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">时间范围</span>
+              <select class="form-control" data-filter="range">
+                <option value="24h">近 24 小时</option>
+                <option value="7d" selected>近 7 天</option>
+                <option value="30d">近 30 天</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+          </div>
+        </section>
+
+        <section class="rpt-metrics" id="rptMetrics"></section>
+
+        <section class="rpt-chart-grid">
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">安全设备运行状态</h2></div>
+            <div class="rpt-chart-el" id="cDevice"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">接口流量趋势</h2></div>
+            <div class="rpt-chart-el" id="cTraffic"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">关键链路质量趋势</h2></div>
+            <div class="rpt-chart-el" id="cLink"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">设备告警等级分布</h2></div>
+            <div class="rpt-chart-el" id="cAlarm"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">日志采集失败 Top</h2></div>
+            <div class="rpt-chart-el" id="cLogFail"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">策略命中 vs 阻断</h2></div>
+            <div class="rpt-chart-el" id="cPolicy"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">设备 / 组件明细</h2>
+            <div class="btn-row">
+              <input class="form-control" style="width:180px" data-filter="keyword" placeholder="关键字">
+              <select class="form-control" style="width:120px" data-filter="status">
+                <option value="">全部状态</option>
+                <option>正常</option>
+                <option>告警</option>
+                <option>离线</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>名称</th><th>类型</th><th>状态</th><th>流量</th><th>告警数</th><th>日志状态</th><th>策略命中</th><th>资源占用</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="rptBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/report-mock.js"></script>
+  <script>
+    const charts = {};
+    let rowsCache = [];
+    const C = { primary: "#1476FF", red: "#F53F57", yellow: "#F7BA1E", green: "#14C9BA", purple: "#9359E3" };
+
+    function statusTag(status) {
+      const cls = status === "正常" ? "success" : status === "告警" ? "warning" : "danger";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+
+    function ensure(id, key) {
+      if (!charts[key]) charts[key] = echarts.init(document.getElementById(id));
+      return charts[key];
+    }
+
+    function openDetail(item) {
+      window.openAppDrawer({
+        title: "设备详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">名称</span><span class="info-value">${item.name || "-"}</span></div>
+            <div class="info-item"><span class="info-label">类型</span><span class="info-value">${item.type || "-"}</span></div>
+            <div class="info-item"><span class="info-label">状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+            <div class="info-item"><span class="info-label">流量</span><span class="info-value">${item.traffic || "-"}</span></div>
+            <div class="info-item"><span class="info-label">告警数</span><span class="info-value">${item.alarms ?? "-"}</span></div>
+            <div class="info-item"><span class="info-label">日志状态</span><span class="info-value">${item.logStatus || "-"}</span></div>
+            <div class="info-item"><span class="info-label">策略命中</span><span class="info-value">${item.policyHits ?? "-"}</span></div>
+            <div class="info-item"><span class="info-label">资源占用</span><span class="info-value">${item.cpu || "-"}</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function renderRows(rows) {
+      const kw = (document.querySelector('[data-filter="keyword"]').value || "").trim();
+      const st = document.querySelector('[data-filter="status"]').value;
+      const list = rows.filter((r) => {
+        if (st && r.status !== st) return false;
+        if (kw && !`${r.name}${r.type}`.includes(kw)) return false;
+        return true;
+      });
+      document.getElementById("rptBody").innerHTML = list.map((r) => `
+        <tr data-id="${r.id}">
+          <td><strong>${r.name}</strong></td>
+          <td>${r.type}</td>
+          <td>${statusTag(r.status)}</td>
+          <td>${r.traffic}</td>
+          <td>${r.alarms}</td>
+          <td>${r.logStatus}</td>
+          <td>${r.policyHits}</td>
+          <td>${r.cpu}</td>
+          <td><button class="table-action" type="button" data-detail="${r.id}">详情</button></td>
+        </tr>`).join("") || `<tr><td colspan="9" class="text-center status-muted">暂无数据</td></tr>`;
+    }
+
+    function paint(range) {
+      const data = window.ReportMock.getNetwork(range);
+      rowsCache = data.rows || [];
+      document.getElementById("rptMetrics").innerHTML = data.kpis.map((k) =>
+        `<div class="rpt-metric"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub || ""}</div></div>`
+      ).join("");
+
+      ensure("cDevice", "device").setOption({
+        color: [C.green, C.yellow, C.red],
+        tooltip: { trigger: "axis" },
+        grid: { left: 40, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.deviceStatus.map((d) => d.name) },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", barWidth: 28, data: data.deviceStatus.map((d) => d.value), itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+      });
+
+      ensure("cTraffic", "traffic").setOption({
+        color: [C.primary, C.purple],
+        tooltip: { trigger: "axis" },
+        legend: { data: ["流入", "流出"], top: 0 },
+        grid: { left: 48, right: 16, top: 36, bottom: 28 },
+        xAxis: { type: "category", data: data.trafficTrend.labels },
+        yAxis: { type: "value" },
+        series: [
+          { name: "流入", type: "line", smooth: true, data: data.trafficTrend.in },
+          { name: "流出", type: "line", smooth: true, data: data.trafficTrend.out },
+        ],
+      });
+
+      ensure("cLink", "link").setOption({
+        color: [C.yellow, C.primary],
+        tooltip: { trigger: "axis" },
+        legend: { data: ["丢包率(%)", "时延(ms)"], top: 0 },
+        grid: { left: 48, right: 16, top: 36, bottom: 28 },
+        xAxis: { type: "category", data: data.linkQuality.labels },
+        yAxis: { type: "value" },
+        series: [
+          { name: "丢包率(%)", type: "line", smooth: true, data: data.linkQuality.loss },
+          { name: "时延(ms)", type: "line", smooth: true, data: data.linkQuality.latency },
+        ],
+      });
+
+      ensure("cAlarm", "alarm").setOption({
+        color: [C.red, C.yellow, "#5B83FF", C.green],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "pie", radius: ["42%", "68%"],
+          data: data.alarmLevels.map((d) => ({ name: d.name, value: d.value })),
+          label: { formatter: "{b} {d}%" },
+        }],
+      });
+
+      ensure("cLogFail", "logFail").setOption({
+        color: [C.red],
+        tooltip: { trigger: "axis" },
+        grid: { left: 100, right: 24, top: 16, bottom: 28 },
+        xAxis: { type: "value" },
+        yAxis: { type: "category", data: data.logFailTop.map((d) => d.name).reverse() },
+        series: [{ type: "bar", data: data.logFailTop.map((d) => d.value).reverse(), barWidth: 14 }],
+      });
+
+      ensure("cPolicy", "policy").setOption({
+        color: [C.primary, C.red],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.policyHit.map((d) => d.name) },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", barWidth: 36, data: data.policyHit.map((d, i) => ({ value: d.value, itemStyle: { color: i ? C.red : C.primary } })) }],
+      });
+
+      renderRows(rowsCache);
+    }
+
+    function currentRange() {
+      return document.querySelector('[data-filter="range"]').value || "7d";
+    }
+
+    paint(currentRange());
+
+    document.querySelector('[data-action="search"]').addEventListener("click", () => paint(currentRange()));
+    document.querySelector('[data-action="reset"]').addEventListener("click", () => {
+      document.querySelector('[data-filter="range"]').value = "7d";
+      document.querySelector('[data-filter="keyword"]').value = "";
+      document.querySelector('[data-filter="status"]').value = "";
+      paint("7d");
+    });
+    document.querySelector('[data-filter="keyword"]').addEventListener("input", () => renderRows(rowsCache));
+    document.querySelector('[data-filter="status"]').addEventListener("change", () => renderRows(rowsCache));
+
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-detail]");
+      if (btn) {
+        const item = rowsCache.find((r) => String(r.id) === String(btn.dataset.detail));
+        if (item) openDetail(item);
+      }
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c && c.resize()));
+  </script>
+</body>
+</html>

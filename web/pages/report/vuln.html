@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>漏洞与风险态势报表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/report.css">
+</head>
+<body class="report-page" data-menu-key="report.vuln" data-page-section="报表管理" data-page-title="漏洞与风险态势报表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters rpt-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">时间范围</span>
+              <select class="form-control" data-filter="range">
+                <option value="24h">近 24 小时</option>
+                <option value="7d" selected>近 7 天</option>
+                <option value="30d">近 30 天</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+          </div>
+        </section>
+
+        <section class="rpt-metrics cols-7" id="rptMetrics"></section>
+
+        <section class="rpt-chart-grid">
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">漏洞治理漏斗</h2></div>
+            <div class="rpt-chart-el" id="cFunnel"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">风险状态分布</h2></div>
+            <div class="rpt-chart-el" id="cRisk"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">重点资产漏洞 Top</h2></div>
+            <div class="rpt-chart-el" id="cAsset"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">整改责任部门排行</h2></div>
+            <div class="rpt-chart-el" id="cDept"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">补丁覆盖率趋势</h2></div>
+            <div class="rpt-chart-el" id="cPatch"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">复测失败 vs 例外审批</h2></div>
+            <div class="rpt-chart-el" id="cRetest"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">漏洞清单</h2>
+            <div class="btn-row">
+              <input class="form-control" style="width:180px" data-filter="keyword" placeholder="CVE / 标题 / 资产">
+              <select class="form-control" style="width:140px" data-filter="status">
+                <option value="">全部状态</option>
+                <option>未修复</option>
+                <option>超期未修</option>
+                <option>已修复</option>
+                <option>临时例外</option>
+                <option>无法修复</option>
+                <option>利用迹象</option>
+                <option>复测失败</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>CVE</th><th>标题</th><th>等级</th><th>资产</th><th>暴露面</th><th>状态</th><th>超期</th><th>责任部门</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="rptBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/report-mock.js"></script>
+  <script>
+    const charts = {};
+    let rowsCache = [];
+    const C = { primary: "#1476FF", red: "#F53F57", yellow: "#F7BA1E", green: "#14C9BA", purple: "#9359E3" };
+
+    function levelTag(level) {
+      const cls = level === "高危" ? "danger" : level === "中危" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+    function statusTag(status) {
+      const danger = ["未修复", "超期未修", "利用迹象", "复测失败"];
+      const warn = ["临时例外", "无法修复"];
+      const cls = danger.includes(status) ? "danger" : warn.includes(status) ? "warning" : "success";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+    function overdueTag(overdue) {
+      return overdue ? `<span class="tag danger">超期</span>` : `<span class="tag success">未超期</span>`;
+    }
+    function ensure(id, key) {
+      if (!charts[key]) charts[key] = echarts.init(document.getElementById(id));
+      return charts[key];
+    }
+
+    function openDetail(item) {
+      window.openAppDrawer({
+        title: "漏洞详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">CVE</span><span class="info-value">${item.cve || "-"}</span></div>
+            <div class="info-item"><span class="info-label">标题</span><span class="info-value">${item.title || "-"}</span></div>
+            <div class="info-item"><span class="info-label">等级</span><span class="info-value">${levelTag(item.level)}</span></div>
+            <div class="info-item"><span class="info-label">资产</span><span class="info-value">${item.asset || "-"}</span></div>
+            <div class="info-item"><span class="info-label">暴露面</span><span class="info-value">${item.exposure || "-"}</span></div>
+            <div class="info-item"><span class="info-label">状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+            <div class="info-item"><span class="info-label">超期</span><span class="info-value">${overdueTag(item.overdue)}</span></div>
+            <div class="info-item"><span class="info-label">责任部门</span><span class="info-value">${item.dept || "-"}</span></div>
+            <div class="info-item"><span class="info-label">例外说明</span><span class="info-value">${item.exceptionNote || "-"}</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function renderRows(rows) {
+      const kw = (document.querySelector('[data-filter="keyword"]').value || "").trim();
+      const st = document.querySelector('[data-filter="status"]').value;
+      const list = rows.filter((r) => {
+        if (st && r.status !== st) return false;
+        if (kw && !`${r.cve}${r.title}${r.asset}`.includes(kw)) return false;
+        return true;
+      });
+      document.getElementById("rptBody").innerHTML = list.map((r) => `
+        <tr data-id="${r.id}">
+          <td>${r.cve}</td>
+          <td>${r.title}</td>
+          <td>${levelTag(r.level)}</td>
+          <td>${r.asset}</td>
+          <td>${r.exposure}</td>
+          <td>${statusTag(r.status)}</td>
+          <td>${overdueTag(r.overdue)}</td>
+          <td>${r.dept || "-"}</td>
+          <td><button class="table-action" type="button" data-detail="${r.id}">详情</button></td>
+        </tr>`).join("") || `<tr><td colspan="9" class="text-center status-muted">暂无数据</td></tr>`;
+    }
+
+    function paint(range) {
+      const data = window.ReportMock.getVuln(range);
+      rowsCache = data.rows || [];
+      document.getElementById("rptMetrics").innerHTML = data.kpis.map((k) =>
+        `<div class="rpt-metric"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub || ""}</div></div>`
+      ).join("");
+
+      ensure("cFunnel", "funnel").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.funnel.map((d) => d.name) },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", barWidth: 36, data: data.funnel.map((d) => d.value), itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+      });
+
+      ensure("cRisk", "risk").setOption({
+        color: [C.yellow, C.red, "#86909C", C.purple, "#F53F57"],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "pie", radius: ["40%", "68%"],
+          data: data.riskStatus.map((d) => ({ name: d.name, value: d.value })),
+        }],
+      });
+
+      ensure("cAsset", "asset").setOption({
+        color: [C.red],
+        tooltip: { trigger: "axis" },
+        grid: { left: 100, right: 24, top: 16, bottom: 28 },
+        xAxis: { type: "value" },
+        yAxis: { type: "category", data: data.assetTop.map((d) => d.name).reverse() },
+        series: [{ type: "bar", data: data.assetTop.map((d) => d.value).reverse(), barWidth: 14 }],
+      });
+
+      ensure("cDept", "dept").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis" },
+        grid: { left: 100, right: 24, top: 16, bottom: 28 },
+        xAxis: { type: "value" },
+        yAxis: { type: "category", data: data.deptRank.map((d) => d.name).reverse() },
+        series: [{ type: "bar", data: data.deptRank.map((d) => d.value).reverse(), barWidth: 14 }],
+      });
+
+      ensure("cPatch", "patch").setOption({
+        color: [C.green],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.patchTrend.labels },
+        yAxis: { type: "value", min: 60, max: 100, axisLabel: { formatter: "{value}%" } },
+        series: [{ type: "line", smooth: true, data: data.patchTrend.rate, areaStyle: { opacity: 0.12 } }],
+      });
+
+      ensure("cRetest", "retest").setOption({
+        color: [C.red, C.yellow],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.retestVsException.map((d) => d.name) },
+        yAxis: { type: "value" },
+        series: [{
+          type: "bar", barWidth: 40,
+          data: data.retestVsException.map((d, i) => ({ value: d.value, itemStyle: { color: i ? C.yellow : C.red } })),
+        }],
+      });
+
+      renderRows(rowsCache);
+    }
+
+    function currentRange() {
+      return document.querySelector('[data-filter="range"]').value || "7d";
+    }
+
+    paint(currentRange());
+
+    document.querySelector('[data-action="search"]').addEventListener("click", () => paint(currentRange()));
+    document.querySelector('[data-action="reset"]').addEventListener("click", () => {
+      document.querySelector('[data-filter="range"]').value = "7d";
+      document.querySelector('[data-filter="keyword"]').value = "";
+      document.querySelector('[data-filter="status"]').value = "";
+      paint("7d");
+    });
+    document.querySelector('[data-filter="keyword"]').addEventListener("input", () => renderRows(rowsCache));
+    document.querySelector('[data-filter="status"]').addEventListener("change", () => renderRows(rowsCache));
+
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-detail]");
+      if (!btn) return;
+      const item = rowsCache.find((r) => String(r.id) === String(btn.dataset.detail));
+      if (item) openDetail(item);
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c && c.resize()));
+  </script>
+</body>
+</html>

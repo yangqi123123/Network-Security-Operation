@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>告警分析 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+</head>
+<body class="alarm-page" data-menu-key="fault.analysis" data-page-section="故障管理" data-page-title="告警分析">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">告警分析</h1>
+            <p class="page-desc">对系统与应用事件进行压缩、关联、过滤与根本原因分析，辅助准确定位故障。</p>
+          </div>
+          <div class="btn-row"></div>
+        </section>
+
+        <section class="fa-analysis-metrics" id="faMetrics"></section>
+
+        <section class="fa-chart-grid">
+          <article class="card fa-chart-card">
+            <div class="card-title-row"><h2 class="card-title">事件压缩 / 过滤漏斗</h2></div>
+            <div class="fa-chart-el" id="faFilter"></div>
+          </article>
+          <article class="card fa-chart-card">
+            <div class="card-title-row"><h2 class="card-title">近 12 小时事件趋势</h2></div>
+            <div class="fa-chart-el" id="faTrend"></div>
+          </article>
+          <article class="card fa-chart-card">
+            <div class="card-title-row"><h2 class="card-title">告警等级分布</h2></div>
+            <div class="fa-chart-el" id="faLevel"></div>
+          </article>
+          <article class="card fa-chart-card">
+            <div class="card-title-row"><h2 class="card-title">根本原因分析</h2></div>
+            <div class="fa-chart-el" id="faRoot"></div>
+          </article>
+        </section>
+
+        <section class="card pad">
+          <div class="card-title-row">
+            <h2 class="card-title">事件关联分析</h2>
+            <span class="status-muted">关联强度越高，越可能同源根因</span>
+          </div>
+          <div class="fa-correlate-list" id="faCorrelate"></div>
+        </section>
+
+        <section class="card user-list-card fa-event-card">
+          <div class="card-title-row user-toolbar"><h2 class="card-title">统一事件展现</h2></div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>资源</th><th>所属域</th><th>类型</th><th>等级</th><th>描述</th><th>状态</th><th>时间</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="faEventBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script>
+    const FA = window.FaultAlarm;
+    const charts = {};
+
+    function levelClass(level) { return level === "告警" ? "high" : level === "预警" ? "medium" : "low"; }
+    function statusClass(status) { return status === "未处理" ? "active" : status === "处理中" ? "processing" : "processed"; }
+    function levelTag(level) {
+      const cls = level === "告警" || level === "严重" ? "danger" : level === "预警" || level === "主要" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+    function statusTag(status) {
+      const cls = status === "未处理" ? "danger" : status === "处理中" ? "warning" : "success";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+
+    function openEventDetail(item) {
+      window.openAppDrawer({
+        title: "事件详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">资源</span><span class="info-value">${item.device || "-"}</span></div>
+            <div class="info-item"><span class="info-label">编码</span><span class="info-value">${item.deviceCode || "-"}</span></div>
+            <div class="info-item"><span class="info-label">所属系统</span><span class="info-value">${item.system || "-"}</span></div>
+            <div class="info-item"><span class="info-label">所属域</span><span class="info-value">${item.domain || "-"}</span></div>
+            <div class="info-item"><span class="info-label">类型</span><span class="info-value">${item.type || "-"}</span></div>
+            <div class="info-item"><span class="info-label">等级</span><span class="info-value">${levelTag(item.level)}</span></div>
+            <div class="info-item"><span class="info-label">状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+            <div class="info-item"><span class="info-label">时间</span><span class="info-value">${item.time || "-"}</span></div>
+            <div class="info-item"><span class="info-label">描述</span><span class="info-value">${item.message || "-"}</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function paint() {
+      const summary = FA.analysisSummary(FA.alarms);
+      document.getElementById("faMetrics").innerHTML = `
+        <div class="fa-metric-card"><div class="label">原始事件</div><div class="value">${summary.rawEvents}</div><div class="sub">系统 + 应用事件采集</div></div>
+        <div class="fa-metric-card"><div class="label">压缩后告警</div><div class="value">${summary.compressed}</div><div class="sub">压缩率 ${summary.compressRatio}%</div></div>
+        <div class="fa-metric-card"><div class="label">已升级告警</div><div class="value">${summary.escalatedCount}</div><div class="sub">超时未处理自动升级</div></div>
+        <div class="fa-metric-card"><div class="label">根因类别</div><div class="value">${summary.rootCauses.filter((r) => r.value > 0).length}</div><div class="sub">关联指标定位</div></div>`;
+
+      if (!charts.filter) charts.filter = echarts.init(document.getElementById("faFilter"));
+      if (!charts.trend) charts.trend = echarts.init(document.getElementById("faTrend"));
+      if (!charts.level) charts.level = echarts.init(document.getElementById("faLevel"));
+      if (!charts.root) charts.root = echarts.init(document.getElementById("faRoot"));
+
+      charts.filter.setOption(FA.barOption(summary.filterFlow));
+      charts.trend.setOption(FA.lineOption(summary.trend));
+      charts.level.setOption(FA.pieOption(summary.byLevel, ["#F53F57", "#F7BA1E", "#14C9BA"]));
+      charts.root.setOption(FA.barOption(summary.rootCauses));
+
+      document.getElementById("faCorrelate").innerHTML = summary.correlate.map((c) => `
+        <div class="fa-correlate-item">
+          <div><div>${c.from}</div><div class="status-muted">关联 → ${c.to}</div></div>
+          <strong>${Math.round(c.strength * 100)}%</strong>
+        </div>`).join("");
+
+      document.getElementById("faEventBody").innerHTML = FA.alarms.slice(0, 10).map((a) => `
+        <tr data-event-id="${a.id}">
+          <td><strong>${a.device}</strong></td>
+          <td>${a.domain || "-"}</td>
+          <td>${a.type}</td>
+          <td><span class="alarm-level ${levelClass(a.level)}">${a.level}</span></td>
+          <td class="alarm-message" title="${a.message}">${a.message}</td>
+          <td><span class="alarm-state ${statusClass(a.status)}">${a.status}</span></td>
+          <td>${a.time}</td>
+          <td><button class="table-action" type="button" data-event-detail="${a.id}">详情</button></td>
+        </tr>`).join("");
+    }
+
+    paint();
+
+    document.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-event-detail]");
+      if (btn) {
+        const item = FA.alarms.find((a) => String(a.id) === String(btn.dataset.eventDetail));
+        if (item) openEventDetail(item);
+        return;
+      }
+      const tr = event.target.closest("#faEventBody tr");
+      if (tr && !event.target.closest("button, input, select, a")) {
+        const item = FA.alarms.find((a) => String(a.id) === String(tr.dataset.eventId));
+        if (item) openEventDetail(item);
+      }
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c?.resize?.()));
+  </script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据安全审计 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/datasec.css">
+</head>
+<body class="ds-sec-page" data-menu-key="datasec.audit" data-page-section="数据安全" data-page-title="数据安全审计">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsAuditMetrics">
+          <article class="metric-card"><div class="metric-label">评估对象数</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">高风险项</div><div class="metric-number" data-m="highRisk">0</div></article>
+          <article class="metric-card"><div class="metric-label">加密覆盖率</div><div class="metric-number" data-m="encryptRate">0%</div></article>
+          <article class="metric-card"><div class="metric-label">脱敏覆盖率</div><div class="metric-number" data-m="maskRate">0%</div></article>
+          <article class="metric-card"><div class="metric-label">防泄漏策略数</div><div class="metric-number" data-m="dlpCount">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">数据级别</span>
+              <select class="form-control" data-filter="level">
+                <option value="">全部</option>
+                <option value="important">重要</option>
+                <option value="core">核心</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">评估结论</span>
+              <select class="form-control" data-filter="conclusion">
+                <option value="">全部</option>
+                <option value="low">低风险</option>
+                <option value="medium">中风险</option>
+                <option value="high">高风险</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">防护短板</span>
+              <select class="form-control" data-filter="protectGap">
+                <option value="">全部</option>
+                <option value="encrypt">加密未全覆盖</option>
+                <option value="mask">脱敏未全覆盖</option>
+                <option value="dlp">防泄漏未全覆盖</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="对象/隐患/资产">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">安全评估列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新建评估</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>对象名称</th><th>关联资产</th><th>级别</th><th>评估结论</th><th>隐患摘要</th>
+                  <th>加密</th><th>脱敏</th><th>防泄漏</th><th>最近评估</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsAuditBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsAuditPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/datasec-mock.js"></script>
+  <script>
+    const DS = window.DataSec;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let currentPage = 1;
+    const pageSize = 10;
+    let lastTotal = 0;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "<span>-</span>";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+    function hazardSummary(list) {
+      const text = (list || []).slice(0, 2).join("；");
+      if (!text) return "-";
+      return esc(text.length > 36 ? text.slice(0, 36) + "…" : text);
+    }
+    function protectOpts(selected) {
+      return ["none", "partial", "full"].map((k) => `<option value="${k}" ${selected === k ? "selected" : ""}>${esc(DS.protectTag(k).label)}</option>`).join("");
+    }
+    function conclusionOpts(selected) {
+      return ["low", "medium", "high"].map((k) => `<option value="${k}" ${selected === k ? "selected" : ""}>${esc(DS.conclusionTag(k).label)}</option>`).join("");
+    }
+    function importantCoreAssets() {
+      const a = DS.listAssets({ level: "important", page: 1, pageSize: 100 }).list;
+      const b = DS.listAssets({ level: "core", page: 1, pageSize: 100 }).list;
+      const map = new Map();
+      [...a, ...b].forEach((x) => map.set(x.id, x));
+      return [...map.values()];
+    }
+    function refreshMetrics() {
+      const m = DS.auditMetrics();
+      document.querySelectorAll("#dsAuditMetrics [data-m]").forEach((el) => {
+        const key = el.dataset.m;
+        el.textContent = key === "encryptRate" || key === "maskRate" ? `${m[key]}%` : (m[key] ?? 0);
+      });
+    }
+    function renderPager(total) {
+      lastTotal = total;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsAuditPager").innerHTML = html;
+    }
+    function render() {
+      const f = readFilter();
+      const res = DS.listAudits({
+        level: f.level || undefined,
+        conclusion: f.conclusion || undefined,
+        protectGap: f.protectGap || undefined,
+        keyword: f.keyword || undefined,
+        page: currentPage,
+        pageSize,
+      });
+      renderPager(res.total);
+      document.getElementById("dsAuditBody").innerHTML = res.list.map((row) => `<tr>
+        <td>${dash(row.name)}</td><td>${dash(DS.getAssetName(row.assetId))}</td>
+        <td>${tagHtml(DS.levelTag(row.level))}</td><td>${tagHtml(DS.conclusionTag(row.conclusion))}</td>
+        <td>${hazardSummary(row.hazards)}</td>
+        <td>${tagHtml(DS.protectTag(row.encrypt))}</td>
+        <td>${tagHtml(DS.protectTag(row.mask))}</td>
+        <td>${tagHtml(DS.protectTag(row.dlp))}</td>
+        <td>${dash(row.assessedAt)}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          <button class="table-action" type="button" data-row="update" data-id="${esc(row.id)}">更新评估</button>
+          <button class="table-action" type="button" data-row="protect" data-id="${esc(row.id)}">配置防护</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+    function openDetail(id) {
+      const row = DS.getAudit(id);
+      if (!row) return;
+      const hazards = (row.hazards || []).length
+        ? `<table class="ds-sec-changelog"><thead><tr><th>#</th><th>隐患描述</th></tr></thead><tbody>${row.hazards.map((h, i) => `<tr><td>${i + 1}</td><td>${dash(h)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="ds-sec-empty">暂无隐患</div>`;
+      const body = `
+        <section class="detail-section"><h3 class="detail-title">评估信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("对象名称", dash(row.name))}${infoItem("关联资产", dash(DS.getAssetName(row.assetId)))}
+            ${infoItem("数据级别", tagHtml(DS.levelTag(row.level)))}${infoItem("评估结论", tagHtml(DS.conclusionTag(row.conclusion)))}
+            ${infoItem("最近评估", dash(row.assessedAt))}${infoItem("保护需求", dash(row.requirements))}
+            ${infoItem("防护备注", dash(row.protectNote))}
+          </div>
+        </section>
+        <section class="detail-section ds-sec-detail-subsection"><h3 class="detail-title">隐患列表</h3>${hazards}</section>
+        <section class="detail-section ds-sec-detail-subsection"><h3 class="detail-title">防护现状</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("加密", tagHtml(DS.protectTag(row.encrypt)))}
+            ${infoItem("脱敏", tagHtml(DS.protectTag(row.mask)))}
+            ${infoItem("防泄漏", tagHtml(DS.protectTag(row.dlp)))}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "评估详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+    function openCreate() {
+      const opts = importantCoreAssets().map((a) => `<option value="${esc(a.id)}">${esc(a.name)}（${esc(DS.levelTag(a.level).label)}）</option>`).join("");
+      const body = `
+        <div class="form-grid-2">
+          <label class="form-field"><span class="form-label form-required">对象名称</span><input class="form-control" id="aName"></label>
+          <label class="form-field"><span class="form-label form-required">关联资产</span><select class="form-control" id="aAsset">${opts}</select></label>
+          <label class="form-field"><span class="form-label">评估结论</span><select class="form-control" id="aConclusion">${conclusionOpts("medium")}</select></label>
+          <label class="form-field" style="grid-column:1/-1"><span class="form-label">隐患（每行一条）</span><textarea class="form-control textarea" id="aHazards"></textarea></label>
+          <label class="form-field" style="grid-column:1/-1"><span class="form-label">保护需求</span><textarea class="form-control textarea" id="aReq"></textarea></label>
+        </div>`;
+      window.openAppDrawer({ title: "新建评估", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="create">确认</button>' });
+    }
+    function openUpdate(id) {
+      const row = DS.getAudit(id);
+      if (!row) return;
+      const body = `
+        <label class="form-field form-item"><span class="form-label">评估结论</span><select class="form-control" id="uConclusion">${conclusionOpts(row.conclusion)}</select></label>
+        <label class="form-field form-item"><span class="form-label">隐患（每行一条）</span><textarea class="form-control textarea" id="uHazards">${esc((row.hazards || []).join("\n"))}</textarea></label>
+        <label class="form-field form-item"><span class="form-label">保护需求</span><textarea class="form-control textarea" id="uReq">${esc(row.requirements || "")}</textarea></label>`;
+      window.openAppDrawer({ title: "更新评估", body, footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="update" data-id="${esc(id)}">确认</button>` });
+    }
+    function openProtect(id) {
+      const row = DS.getAudit(id);
+      if (!row) return;
+      const body = `
+        <div class="form-grid-2">
+          <label class="form-field"><span class="form-label">加密</span><select class="form-control" id="pEncrypt">${protectOpts(row.encrypt)}</select></label>
+          <label class="form-field"><span class="form-label">脱敏</span><select class="form-control" id="pMask">${protectOpts(row.mask)}</select></label>
+          <label class="form-field"><span class="form-label">防泄漏</span><select class="form-control" id="pDlp">${protectOpts(row.dlp)}</select></label>
+          <label class="form-field" style="grid-column:1/-1"><span class="form-label">备注</span><textarea class="form-control textarea" id="pNote">${esc(row.protectNote || "")}</textarea></label>
+        </div>`;
+      window.openAppDrawer({ title: "配置防护", body, footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="protect" data-id="${esc(id)}">确认</button>` });
+    }
+
+    render();
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") { document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; }); currentPage = 1; render(); }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "create") openCreate();
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "update") openUpdate(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "protect") openProtect(rowBtn.dataset.id);
+      }
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next" && currentPage < Math.max(1, Math.ceil(lastTotal / pageSize))) { currentPage += 1; render(); }
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "create") {
+        const name = document.getElementById("aName")?.value.trim();
+        const assetId = document.getElementById("aAsset")?.value;
+        if (!name || !assetId) { alert("请填写对象名称并选择关联资产"); return; }
+        const asset = DS.getAsset(assetId);
+        DS.createAudit({
+          name, assetId, level: asset?.level,
+          conclusion: document.getElementById("aConclusion").value,
+          hazards: document.getElementById("aHazards").value,
+          requirements: document.getElementById("aReq").value.trim(),
+        });
+        window.closeAppDrawer(); currentPage = 1; render();
+      }
+      if (submit.dataset.drawerSubmit === "update") {
+        DS.updateAudit(submit.dataset.id, {
+          conclusion: document.getElementById("uConclusion").value,
+          hazards: document.getElementById("uHazards").value,
+          requirements: document.getElementById("uReq").value.trim(),
+        });
+        window.closeAppDrawer(); render();
+      }
+      if (submit.dataset.drawerSubmit === "protect") {
+        DS.setProtection(submit.dataset.id, {
+          encrypt: document.getElementById("pEncrypt").value,
+          mask: document.getElementById("pMask").value,
+          dlp: document.getElementById("pDlp").value,
+          protectNote: document.getElementById("pNote").value.trim(),
+        });
+        window.closeAppDrawer(); render();
+      }
+    });
+  </script>
+</body>
+</html>

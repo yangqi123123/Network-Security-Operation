@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>资产风险评级 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/asset-security.css">
+</head>
+<body class="as-page" data-menu-key="asset.risk" data-page-section="资产安全管理" data-page-title="资产风险评级">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="asRiskMetrics">
+          <article class="metric-card"><div class="metric-label">高风险</div><div class="metric-number" data-m="high">0</div></article>
+          <article class="metric-card"><div class="metric-label">中风险</div><div class="metric-number" data-m="medium">0</div></article>
+          <article class="metric-card"><div class="metric-label">低风险</div><div class="metric-number" data-m="low">0</div></article>
+          <article class="metric-card"><div class="metric-label">待治理优先</div><div class="metric-number" data-m="priorityOpen">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">名称</span>
+              <input class="form-control" data-filter="keyword" placeholder="请输入">
+            </label>
+            <label class="form-field"><span class="form-label">资产类型</span>
+              <select class="form-control" data-filter="type"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">风险等级</span>
+              <select class="form-control" data-filter="grade">
+                <option value="">全部</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">敏感度</span>
+              <select class="form-control" data-filter="sensitivity">
+                <option value="">全部</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">优先级</span>
+              <select class="form-control" data-filter="priority">
+                <option value="">全部</option>
+                <option value="P1">P1</option>
+                <option value="P2">P2</option>
+                <option value="P3">P3</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">风险评级列表</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>资产</th><th>类型</th><th>风险评分</th><th>等级</th><th>漏洞数</th>
+                  <th>告警数</th><th>敏感度</th><th>优先级</th><th>最近处置</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="asRiskBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="asRiskPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/asset-security-mock.js"></script>
+  <script>
+    const AS = window.AssetSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    const urlAssetId = new URLSearchParams(location.search).get("assetId") || "";
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+    let currentAssetId = "";
+    let relatedState = null;
+    let activeSubKey = "";
+
+    const NEXT_ACTIONS = {
+      discovered: [{ action: "verify", label: "验证" }],
+      verified: [{ action: "assign", label: "派单" }],
+      assigned: [{ action: "fix", label: "修复" }],
+      fixing: [{ action: "retest", label: "复测" }],
+      retest: [{ action: "close", label: "关闭" }],
+      closed: [],
+    };
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function fillTypeFilter() {
+      const sel = document.querySelector("[data-filter='type']");
+      sel.innerHTML = '<option value="">全部</option>' + AS.TYPE_ORDER.map((k) =>
+        `<option value="${k}">${esc(AS.TYPE_LABEL[k])}</option>`
+      ).join("");
+    }
+
+    function refreshMetrics() {
+      const m = AS.riskMetrics();
+      document.querySelectorAll("#asRiskMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("asRiskPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = AS.listRiskProfiles({
+        keyword: f.keyword || undefined,
+        type: f.type || undefined,
+        grade: f.grade || undefined,
+        sensitivity: f.sensitivity || undefined,
+        priority: f.priority || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("asRiskBody").innerHTML = pageRows.map((row) => {
+        const asset = row.asset || AS.getAsset(row.assetId) || {};
+        return `<tr data-id="${esc(row.assetId)}">
+          <td>${dash(asset.name || row.name)}</td>
+          <td>${esc(AS.typeLabel(asset.type || row.type))}</td>
+          <td>${esc(row.score)}</td>
+          <td>${tagHtml(AS.gradeMeta(row.grade))}</td>
+          <td>${esc(row.vulnCount)}</td>
+          <td>${esc(row.alarmCount)}</td>
+          <td>${tagHtml(AS.gradeMeta(asset.sensitivity || row.sensitivity))}</td>
+          <td>${dash(row.priority)}</td>
+          <td>${dash(row.lastHandledAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="profile" data-id="${esc(row.assetId)}">画像</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function closeAsSubModal() {
+      document.querySelectorAll(".as-submodal-mask").forEach((el) => el.remove());
+      activeSubKey = "";
+    }
+
+    function openAsSubModal({ title, body, footer }) {
+      closeAsSubModal();
+      const mask = document.createElement("div");
+      mask.className = "as-submodal-mask";
+      mask.innerHTML = `
+        <div class="as-submodal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+          <header class="as-submodal-head">
+            <strong>${esc(title)}</strong>
+            <button type="button" data-as-sub-close aria-label="关闭">×</button>
+          </header>
+          <div class="as-submodal-body">${body || ""}</div>
+          <footer class="as-submodal-foot">${footer || '<button class="btn btn-secondary" type="button" data-as-sub-close>取消</button>'}</footer>
+        </div>`;
+      document.body.append(mask);
+      mask.addEventListener("click", (e) => {
+        if (e.target === mask) closeAsSubModal();
+      });
+      mask.querySelectorAll("[data-as-sub-close]").forEach((btn) => {
+        btn.addEventListener("click", closeAsSubModal);
+      });
+    }
+
+    function ensureRelatedState(profile) {
+      const related = JSON.parse(JSON.stringify(profile.related || {}));
+      (related.events || []).forEach((it) => {
+        if (!it.handleStatus) it.handleStatus = "open";
+      });
+      (related.configs || []).forEach((it) => {
+        if (!it.handleStatus) it.handleStatus = it.status === "偏离" ? "open" : "done";
+      });
+      (related.permissions || []).forEach((it) => {
+        if (!it.handleStatus) it.handleStatus = "open";
+      });
+      (related.dataAssets || []).forEach((it) => {
+        if (!it.handleStatus) it.handleStatus = "open";
+      });
+      (related.tickets || []).forEach((it) => {
+        if (!it.handleStatus) it.handleStatus = it.status === "已关闭" ? "done" : "open";
+      });
+      relatedState = related;
+      return relatedState;
+    }
+
+    function refreshProfileDrawer() {
+      if (!currentAssetId) return;
+      const drawer = document.getElementById("drawer");
+      if (!drawer || !drawer.classList.contains("open")) return;
+      const keepSub = activeSubKey;
+      openProfile(currentAssetId, { keepRelated: true });
+      if (keepSub) openRelatedModal(keepSub);
+    }
+
+    function openProfile(assetId, opts = {}) {
+      const profile = AS.getAssetProfile(assetId);
+      if (!profile) return;
+      currentAssetId = assetId;
+      const asset = profile.asset || AS.getAsset(assetId) || {};
+      const br = profile.scoreBreakdown || {};
+      if (!opts.keepRelated || !relatedState) ensureRelatedState(profile);
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("资产名称", dash(asset.name))}
+            ${infoItem("资产类型", esc(AS.typeLabel(asset.type)))}
+            ${infoItem("标识", dash(asset.identity))}
+            ${infoItem("责任人", dash(asset.owner))}
+            ${infoItem("部门", dash(asset.dept))}
+            ${infoItem("状态", tagHtml(AS.statusMeta(asset.status)))}
+            ${infoItem("敏感度", tagHtml(AS.gradeMeta(asset.sensitivity)))}
+            ${infoItem("优先级", dash(profile.priority))}
+            ${infoItem("最近处置", dash(profile.lastHandledAt))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">风险评分 ${esc(profile.score)}（${esc((AS.gradeMeta(profile.grade) || {}).label || profile.grade)}）</h3>
+          <div class="as-score-bar"><span style="width:${Number(profile.score) || 0}%"></span></div>
+          <div class="as-breakdown">
+            <div class="as-breakdown-row"><span>漏洞</span><span>${esc(br.vuln ?? 0)}</span></div>
+            <div class="as-breakdown-row"><span>告警</span><span>${esc(br.alarm ?? 0)}</span></div>
+            <div class="as-breakdown-row"><span>敏感度</span><span>${esc(br.sensitivity ?? 0)}</span></div>
+            <div class="as-breakdown-row"><span>暴露面</span><span>${esc(br.exposure ?? 0)}</span></div>
+          </div>
+        </section>
+        <div class="as-profile-actions">
+          <button class="btn btn-secondary" type="button" data-related="events">事件</button>
+          <button class="btn btn-secondary" type="button" data-related="vulns">漏洞</button>
+          <button class="btn btn-secondary" type="button" data-related="configs">配置</button>
+          <button class="btn btn-secondary" type="button" data-related="permissions">权限</button>
+          <button class="btn btn-secondary" type="button" data-related="dataAssets">数据</button>
+          <button class="btn btn-secondary" type="button" data-related="tickets">工单</button>
+        </div>`;
+      window.openAppDrawer({
+        title: "资产画像",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>',
+      });
+    }
+
+    function handleStatusTag(status) {
+      if (status === "done") return '<span class="tag success">已处置</span>';
+      if (status === "ignored") return '<span class="tag muted">已忽略</span>';
+      return '<span class="tag warning">待处置</span>';
+    }
+
+    function emptyBlock(text) {
+      return `<div class="as-related-empty">${esc(text || "暂无数据")}</div>`;
+    }
+
+    function buildEventsBody() {
+      const items = relatedState?.events || [];
+      if (!items.length) return emptyBlock("暂无关联事件");
+      const rows = items.map((it) => `<tr data-id="${esc(it.id)}">
+        <td>${dash(it.title)}</td>
+        <td>${dash(it.at)}</td>
+        <td>${handleStatusTag(it.handleStatus)}</td>
+        <td class="user-actions-col">
+          ${it.handleStatus === "open" ? `
+            <button class="table-action" type="button" data-sub-act="event-done" data-id="${esc(it.id)}">确认处置</button>
+            <button class="table-action" type="button" data-sub-act="event-ignore" data-id="${esc(it.id)}">忽略</button>
+          ` : '<span class="helper-text">已闭环</span>'}
+        </td>
+      </tr>`).join("");
+      return `<p class="as-submodal-hint">对关联安全事件确认处置或忽略，完成后状态回写画像。</p>
+        <table class="as-submodal-table"><thead><tr><th>事件</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function buildVulnsBody() {
+      const items = AS.listVulns({ assetId: currentAssetId });
+      if (!items.length) return emptyBlock("该资产暂无脆弱性记录");
+      const rows = items.map((it) => {
+        const next = (NEXT_ACTIONS[it.stage] || [])[0];
+        return `<tr data-id="${esc(it.id)}">
+          <td>${dash(it.title)}</td>
+          <td>${esc(AS.vulnTypeLabel(it.vulnType))}</td>
+          <td>${tagHtml(AS.levelMeta(it.level))}</td>
+          <td>${tagHtml(AS.stageMeta(it.stage))}</td>
+          <td class="user-actions-col">
+            ${next ? `<button class="table-action" type="button" data-sub-act="vuln-advance" data-action-key="${esc(next.action)}" data-id="${esc(it.id)}">${esc(next.label)}</button>` : '<span class="helper-text">已关闭</span>'}
+            ${it.stage === "discovered" || it.stage === "verified" ? `<button class="table-action" type="button" data-sub-act="vuln-fp" data-id="${esc(it.id)}">误报</button>` : ""}
+          </td>
+        </tr>`;
+      }).join("");
+      return `<p class="as-submodal-hint">在画像内推进漏洞闭环；误报可直接关闭。处置后刷新评分。</p>
+        <table class="as-submodal-table"><thead><tr><th>标题</th><th>类型</th><th>等级</th><th>阶段</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function buildConfigsBody() {
+      const items = relatedState?.configs || [];
+      if (!items.length) return emptyBlock("暂无配置项");
+      const rows = items.map((it) => `<tr data-id="${esc(it.id)}">
+        <td>${dash(it.name)}</td>
+        <td>${dash(it.status)}</td>
+        <td>${handleStatusTag(it.handleStatus)}</td>
+        <td class="user-actions-col">
+          ${it.handleStatus === "open" ? `
+            <button class="table-action" type="button" data-sub-act="cfg-done" data-id="${esc(it.id)}">复核通过</button>
+            <button class="table-action" type="button" data-sub-act="cfg-ticket" data-id="${esc(it.id)}">转工单</button>
+          ` : '<span class="helper-text">已闭环</span>'}
+        </td>
+      </tr>`).join("");
+      return `<p class="as-submodal-hint">配置偏离可复核通过，或转入治理工单。</p>
+        <table class="as-submodal-table"><thead><tr><th>配置项</th><th>合规状态</th><th>处置</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function buildPermissionsBody() {
+      const items = relatedState?.permissions || [];
+      if (!items.length) return emptyBlock("暂无权限摘要");
+      const rows = items.map((it) => `<tr data-id="${esc(it.id)}">
+        <td>${dash(it.name)}</td>
+        <td>${dash(String(it.count))}</td>
+        <td>${handleStatusTag(it.handleStatus)}</td>
+        <td class="user-actions-col">
+          ${it.handleStatus === "open" ? `
+            <button class="table-action" type="button" data-sub-act="perm-review" data-id="${esc(it.id)}">发起复核</button>
+            <button class="table-action" type="button" data-sub-act="perm-done" data-id="${esc(it.id)}">确认合规</button>
+          ` : '<span class="helper-text">已闭环</span>'}
+        </td>
+      </tr>`).join("");
+      return `<p class="as-submodal-hint">对高权限账号发起复核或确认合规。</p>
+        <table class="as-submodal-table"><thead><tr><th>权限项</th><th>数量</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function buildDataBody() {
+      const items = relatedState?.dataAssets || [];
+      if (!items.length) return emptyBlock("暂无关联敏感数据");
+      const rows = items.map((it) => `<tr data-id="${esc(it.id)}">
+        <td>${dash(it.name)}</td>
+        <td>${dash(it.level)}</td>
+        <td>${handleStatusTag(it.handleStatus)}</td>
+        <td class="user-actions-col">
+          ${it.handleStatus === "open" ? `<button class="table-action" type="button" data-sub-act="data-done" data-id="${esc(it.id)}">核验完成</button>` : '<span class="helper-text">已闭环</span>'}
+        </td>
+      </tr>`).join("");
+      return `<p class="as-submodal-hint">核验敏感数据分级与资产绑定关系。</p>
+        <table class="as-submodal-table"><thead><tr><th>数据资产</th><th>级别</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function buildTicketsBody() {
+      const items = relatedState?.tickets || [];
+      if (!items.length) return emptyBlock("暂无治理工单");
+      const rows = items.map((it) => `<tr data-id="${esc(it.id)}">
+        <td>${dash(it.title)}</td>
+        <td>${dash(it.priority)}</td>
+        <td>${dash(it.status)}</td>
+        <td>${handleStatusTag(it.handleStatus)}</td>
+        <td class="user-actions-col">
+          ${it.handleStatus === "open" ? `
+            <button class="table-action" type="button" data-sub-act="ticket-urge" data-id="${esc(it.id)}">催办</button>
+            <button class="table-action" type="button" data-sub-act="ticket-close" data-id="${esc(it.id)}">关闭</button>
+          ` : '<span class="helper-text">已闭环</span>'}
+        </td>
+      </tr>`).join("");
+      return `<p class="as-submodal-hint">催办未关闭工单，或确认修复后关闭。</p>
+        <table class="as-submodal-table"><thead><tr><th>工单</th><th>优先级</th><th>状态</th><th>处置</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function openRelatedModal(key) {
+      activeSubKey = key;
+      const titleMap = {
+        events: "关联事件",
+        vulns: "关联漏洞",
+        configs: "配置基线",
+        permissions: "权限摘要",
+        dataAssets: "关联数据",
+        tickets: "治理工单",
+      };
+      const builders = {
+        events: buildEventsBody,
+        vulns: buildVulnsBody,
+        configs: buildConfigsBody,
+        permissions: buildPermissionsBody,
+        dataAssets: buildDataBody,
+        tickets: buildTicketsBody,
+      };
+      openAsSubModal({
+        title: titleMap[key] || "详情",
+        body: (builders[key] || (() => emptyBlock()))(),
+        footer: '<button class="btn btn-secondary" type="button" data-as-sub-close>取消</button>',
+      });
+    }
+
+    function findRelated(listKey, id) {
+      return (relatedState?.[listKey] || []).find((it) => String(it.id) === String(id));
+    }
+
+    function afterLoopChange(message) {
+      if (message) {
+        // light feedback without replacing drawer
+        const tip = document.createElement("div");
+        tip.className = "as-submodal-hint";
+        tip.style.cssText = "position:fixed;right:24px;bottom:24px;z-index:1500;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-popover);";
+        tip.textContent = message;
+        document.body.append(tip);
+        setTimeout(() => tip.remove(), 1600);
+      }
+      render();
+      refreshProfileDrawer();
+    }
+
+    fillTypeFilter();
+    render();
+    if (urlAssetId && AS.getAsset(urlAssetId)) openProfile(urlAssetId);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      if (document.querySelector(".as-submodal-mask")) {
+        event.stopImmediatePropagation();
+        closeAsSubModal();
+      }
+    }, true);
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn?.dataset.row === "profile") {
+        relatedState = null;
+        openProfile(rowBtn.dataset.id);
+      }
+
+      const relatedKey = event.target.closest("[data-related]")?.dataset.related;
+      if (relatedKey) {
+        event.preventDefault();
+        openRelatedModal(relatedKey);
+      }
+
+      const subAct = event.target.closest("[data-sub-act]");
+      if (subAct) {
+        const id = subAct.dataset.id;
+        const act = subAct.dataset.subAct;
+        if (act === "event-done" || act === "event-ignore") {
+          const item = findRelated("events", id);
+          if (item) item.handleStatus = act === "event-done" ? "done" : "ignored";
+          afterLoopChange(act === "event-done" ? "事件已确认处置" : "事件已忽略");
+        }
+        if (act === "vuln-advance") {
+          const result = AS.advanceVulnStage(id, subAct.dataset.actionKey, subAct.dataset.actionKey === "assign" ? "当前用户" : "");
+          if (!result.ok) { alert(result.message || "推进失败"); return; }
+          afterLoopChange("漏洞阶段已推进");
+        }
+        if (act === "vuln-fp") {
+          const result = AS.advanceVulnStage(id, "false_positive", "画像内误报关闭");
+          if (!result.ok) { alert(result.message || "关闭失败"); return; }
+          afterLoopChange("已按误报关闭");
+        }
+        if (act === "cfg-done") {
+          const item = findRelated("configs", id);
+          if (item) { item.handleStatus = "done"; item.status = "合规"; }
+          afterLoopChange("配置已复核通过");
+        }
+        if (act === "cfg-ticket") {
+          const item = findRelated("configs", id);
+          if (item) item.handleStatus = "done";
+          if (relatedState) {
+            relatedState.tickets = relatedState.tickets || [];
+            relatedState.tickets.unshift({
+              id: "TK-CFG-" + Date.now(),
+              title: `配置修正: ${item?.name || id}`,
+              status: "处理中",
+              priority: "P2",
+              handleStatus: "open",
+            });
+          }
+          afterLoopChange("已转入治理工单");
+        }
+        if (act === "perm-review" || act === "perm-done") {
+          const item = findRelated("permissions", id);
+          if (item) item.handleStatus = "done";
+          afterLoopChange(act === "perm-review" ? "已发起权限复核" : "权限已确认合规");
+        }
+        if (act === "data-done") {
+          const item = findRelated("dataAssets", id);
+          if (item) item.handleStatus = "done";
+          afterLoopChange("敏感数据核验完成");
+        }
+        if (act === "ticket-urge") {
+          afterLoopChange("已催办责任人");
+          openRelatedModal("tickets");
+          return;
+        }
+        if (act === "ticket-close") {
+          const item = findRelated("tickets", id);
+          if (item) { item.handleStatus = "done"; item.status = "已关闭"; }
+          afterLoopChange("工单已关闭");
+        }
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

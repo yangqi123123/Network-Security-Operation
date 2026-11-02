@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>储存设备管理 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/desktop-security.css?v=20261101b">
+</head>
+<body class="ds-page" data-menu-key="desktop.storage" data-page-section="桌面安全管理" data-page-title="储存设备管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsStorageMetrics">
+          <article class="metric-card"><div class="metric-label">已登记介质</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">已授权</div><div class="metric-number" data-m="authorized">0</div></article>
+          <article class="metric-card"><div class="metric-label">待审批</div><div class="metric-number" data-m="pendingAuth">0</div></article>
+          <article class="metric-card"><div class="metric-label">风险待处置</div><div class="metric-number" data-m="riskPending">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">介质类型</span>
+              <select class="form-control" data-filter="type"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">名称/序列号</span>
+              <input class="form-control" data-filter="keyword" placeholder="请输入">
+            </label>
+            <label class="form-field"><span class="form-label">授权状态</span>
+              <select class="form-control" data-filter="authStatus">
+                <option value="">全部</option>
+                <option value="pending">待审批</option>
+                <option value="authorized">已授权</option>
+                <option value="readonly">只读</option>
+                <option value="revoked">已撤销</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">绑定终端</span>
+              <select class="form-control" data-filter="hostId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">登记起</span>
+              <input class="form-control" data-filter="registeredFrom" placeholder="2026-01-01">
+            </label>
+            <label class="form-field"><span class="form-label">登记止</span>
+              <input class="form-control" data-filter="registeredTo" placeholder="2026-12-31">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">储存介质列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="register"><i class="fa-solid fa-plus"></i> 登记介质</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>介质名称</th><th>类型</th><th>序列号</th><th>容量</th><th>归属人/部门</th>
+                  <th>绑定终端</th><th>授权状态</th><th>风险等级</th><th>最近使用</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsStorageBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsStoragePager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/desktop-security-mock.js"></script>
+  <script>
+    const DS = window.DesktopSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function hostName(id) {
+      const h = DS.getHost(id);
+      return h ? h.name : "-";
+    }
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label || meta.label === "无") return `<span class="info-value">${esc(meta?.label || "-")}</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function fillHostSelects() {
+      const opts = DS.listHosts().map((h) => `<option value="${esc(h.id)}">${esc(h.name)} (${esc(h.ip)})</option>`).join("");
+      document.querySelectorAll("[data-filter='hostId'], #regHost, #authHost").forEach((el) => {
+        if (!el) return;
+        const keep = el.dataset.filter === "hostId" ? '<option value="">全部</option>' : '<option value="">请选择</option>';
+        el.innerHTML = keep + opts;
+      });
+    }
+
+    function fillTypeFilter() {
+      const sel = document.querySelector("[data-filter='type']");
+      sel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.TYPE_LABEL).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = DS.storageMetrics();
+      document.querySelectorAll("#dsStorageMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsStoragePager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = DS.listStorages({
+        type: f.type || undefined,
+        keyword: f.keyword || undefined,
+        authStatus: f.authStatus || undefined,
+        hostId: f.hostId || undefined,
+        registeredFrom: f.registeredFrom || undefined,
+        registeredTo: f.registeredTo || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dsStorageBody").innerHTML = pageRows.map((row) => {
+        const auth = DS.authTag(row.authStatus);
+        const risk = DS.riskTag(row.riskLevel);
+        return `<tr data-id="${esc(row.id)}">
+          <td>${dash(row.name)}</td>
+          <td>${esc(DS.TYPE_LABEL[row.type] || row.type)}</td>
+          <td>${dash(row.sn)}</td>
+          <td>${dash(row.capacity)}</td>
+          <td>${dash(row.owner)} / ${dash(row.dept)}</td>
+          <td>${esc(hostName(row.hostId))}</td>
+          <td>${tagHtml(auth)}</td>
+          <td>${tagHtml(risk)}</td>
+          <td>${dash(row.lastUsedAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            <button class="table-action" type="button" data-row="authorize" data-id="${esc(row.id)}">授权</button>
+            <button class="table-action" type="button" data-row="risk" data-id="${esc(row.id)}">风险处置</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = DS.getStorage(id);
+      if (!row) return;
+      const audits = DS.listStorageAudits(id, 10);
+      const auditTable = audits.length
+        ? `<table class="ds-audit-table"><thead><tr><th>时间</th><th>动作</th><th>路径</th><th>终端</th><th>结果</th></tr></thead><tbody>${audits.map((a) => `<tr><td>${dash(a.time)}</td><td>${esc(DS.auditActionLabel(a.action))}</td><td>${dash(a.path)}</td><td>${esc(hostName(a.hostId))}</td><td>${dash(a.result)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="ds-audit-empty">暂无审计记录</div>`;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("介质名称", dash(row.name))}
+            ${infoItem("介质类型", esc(DS.TYPE_LABEL[row.type] || row.type))}
+            ${infoItem("序列号", dash(row.sn))}
+            ${infoItem("容量", dash(row.capacity))}
+            ${infoItem("归属人", dash(row.owner))}
+            ${infoItem("部门", dash(row.dept))}
+            ${infoItem("绑定终端", esc(hostName(row.hostId)))}
+            ${infoItem("允许用户", dash(row.allowedUser || row.owner))}
+            ${infoItem("授权状态", tagHtml(DS.authTag(row.authStatus)))}
+            ${infoItem("强制加密", row.encryptRequired ? "是" : "否")}
+            ${infoItem("风险等级", tagHtml(DS.riskTag(row.riskLevel)))}
+            ${infoItem("风险状态", tagHtml(DS.riskStatusTag(row.riskStatus)))}
+            ${infoItem("登记时间", dash(row.registeredAt))}
+            ${infoItem("最近使用", dash(row.lastUsedAt))}
+            ${infoItem("备注信息", dash(row.remark))}
+          </div>
+        </section>
+        <section class="detail-section ds-detail-subsection">
+          <h3 class="detail-title">最近审计</h3>
+          ${auditTable}
+        </section>`;
+      window.openAppDrawer({ title: "介质详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openRegister() {
+      const hostOpts = DS.listHosts().map((h) => `<option value="${esc(h.id)}">${esc(h.name)}</option>`).join("");
+      const typeOpts = Object.entries(DS.TYPE_LABEL).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">介质名称</span><input class="form-control" id="regName" placeholder="请输入"></label>
+        <label class="form-field form-item"><span class="form-label form-required">介质类型</span><select class="form-control" id="regType">${typeOpts}</select></label>
+        <label class="form-field form-item"><span class="form-label form-required">序列号</span><input class="form-control" id="regSn" placeholder="请输入"></label>
+        <label class="form-field form-item"><span class="form-label">容量</span><input class="form-control" id="regCap" placeholder="如 32GB"></label>
+        <label class="form-field form-item"><span class="form-label">归属人</span><input class="form-control" id="regOwner" placeholder="请输入"></label>
+        <label class="form-field form-item"><span class="form-label">部门</span><input class="form-control" id="regDept" placeholder="请输入"></label>
+        <label class="form-field form-item"><span class="form-label">绑定终端</span><select class="form-control" id="regHost"><option value="">请选择</option>${hostOpts}</select></label>`;
+      window.openAppDrawer({
+        title: "登记介质",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="register">确认</button>',
+      });
+    }
+
+    function openAuthorize(id) {
+      const row = DS.getStorage(id);
+      if (!row) return;
+      const hostOpts = DS.listHosts().map((h) => `<option value="${esc(h.id)}" ${h.id === row.hostId ? "selected" : ""}>${esc(h.name)}</option>`).join("");
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">授权权限</span>
+          <select class="form-control" id="authStatus"><option value="authorized">读写（已授权）</option><option value="readonly">只读</option></select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">允许终端</span><select class="form-control" id="authHost"><option value="">请选择</option>${hostOpts}</select></label>
+        <label class="form-field form-item"><span class="form-label">允许用户</span><input class="form-control" id="authUser" value="${esc(row.allowedUser || row.owner || "")}" placeholder="账号或姓名"></label>
+        <label class="form-field form-item"><span class="form-label">有效期至</span><input class="form-control" id="authUntil" value="${esc(row.validUntil || "")}" placeholder="2026-12-31"></label>
+        <label class="switch-line form-item"><span>强制加密</span><input type="checkbox" id="authEncrypt"${row.encryptRequired ? " checked" : ""}></label>
+        <label class="form-field form-item"><span class="form-label">备注</span><textarea class="form-control textarea" id="authRemark" placeholder="请输入">${esc(row.remark || "")}</textarea></label>`;
+      window.openAppDrawer({
+        title: "介质授权",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="authorize" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function openRisk(id) {
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">处置动作</span>
+          <select class="form-control" id="riskAction">
+            <option value="isolate">隔离</option>
+            <option value="revoke">撤销授权</option>
+            <option value="false_positive">标记误报</option>
+          </select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">备注</span><textarea class="form-control textarea" id="riskRemark" placeholder="请输入"></textarea></label>`;
+      window.openAppDrawer({
+        title: "风险处置",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="risk" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    fillTypeFilter();
+    fillHostSelects();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "register") openRegister();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "detail") openDetail(id);
+        if (rowBtn.dataset.row === "authorize") openAuthorize(id);
+        if (rowBtn.dataset.row === "risk") openRisk(id);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "register") {
+        const name = document.getElementById("regName")?.value.trim();
+        const sn = document.getElementById("regSn")?.value.trim();
+        if (!name || !sn) { alert("请填写介质名称与序列号"); return; }
+        DS.registerStorage({
+          name,
+          type: document.getElementById("regType").value,
+          sn,
+          capacity: document.getElementById("regCap").value.trim(),
+          owner: document.getElementById("regOwner").value.trim(),
+          dept: document.getElementById("regDept").value.trim(),
+          hostId: document.getElementById("regHost").value || null,
+        });
+        window.closeAppDrawer();
+        currentPage = 1;
+        render();
+      }
+      if (submit.dataset.drawerSubmit === "authorize") {
+        DS.authorizeStorage(submit.dataset.id, {
+          authStatus: document.getElementById("authStatus").value,
+          hostId: document.getElementById("authHost").value || undefined,
+          allowedUser: document.getElementById("authUser").value.trim() || undefined,
+          validUntil: document.getElementById("authUntil").value.trim() || undefined,
+          encryptRequired: document.getElementById("authEncrypt").checked,
+          remark: document.getElementById("authRemark").value.trim(),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+      if (submit.dataset.drawerSubmit === "risk") {
+        DS.handleStorageRisk(submit.dataset.id, {
+          action: document.getElementById("riskAction").value,
+          remark: document.getElementById("riskRemark").value.trim(),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

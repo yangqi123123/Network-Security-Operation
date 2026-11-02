@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>脆弱性管理 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/asset-security.css">
+</head>
+<body class="as-page" data-menu-key="asset.vuln" data-page-section="资产安全管理" data-page-title="脆弱性管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="asVulnMetrics">
+          <article class="metric-card"><div class="metric-label">待验证</div><div class="metric-number" data-m="pendingVerify">0</div></article>
+          <article class="metric-card"><div class="metric-label">处置中</div><div class="metric-number" data-m="inProgress">0</div></article>
+          <article class="metric-card"><div class="metric-label">逾期未修</div><div class="metric-number" data-m="overdue">0</div></article>
+          <article class="metric-card"><div class="metric-label">本周已关闭</div><div class="metric-number" data-m="closedThisWeek">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">关联资产</span>
+              <select class="form-control" data-filter="assetId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">脆弱性类型</span>
+              <select class="form-control" data-filter="vulnType"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">风险等级</span>
+              <select class="form-control" data-filter="level">
+                <option value="">全部</option>
+                <option value="critical">严重</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">责任人</span>
+              <input class="form-control" data-filter="owner" placeholder="请输入">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">脆弱性列表</h2>
+          </div>
+          <div class="tabs as-tabs-scroll" role="tablist" id="asStageTabs"></div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>标题</th><th>类型</th><th>关联资产</th><th>等级</th><th>阶段</th>
+                  <th>发现时间</th><th>责任人</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="asVulnBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="asVulnPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/asset-security-mock.js"></script>
+  <script>
+    const AS = window.AssetSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    const urlAssetId = new URLSearchParams(location.search).get("assetId") || "";
+    let currentStage = "";
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    const NEXT_ACTIONS = {
+      discovered: [
+        { action: "verify", label: "验证通过" },
+        { action: "false_positive", label: "误报关闭" },
+      ],
+      verified: [
+        { action: "assign", label: "派单" },
+        { action: "false_positive", label: "误报关闭" },
+      ],
+      assigned: [{ action: "fix", label: "登记修复" }],
+      fixing: [{ action: "retest", label: "提交复测" }],
+      retest: [{ action: "close", label: "关闭" }],
+      closed: [],
+    };
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function assetName(id) {
+      const a = AS.getAsset(id);
+      return a ? a.name : id || "-";
+    }
+
+    function fillFilters() {
+      const assetSel = document.querySelector("[data-filter='assetId']");
+      assetSel.innerHTML = '<option value="">全部</option>' + AS.listAssets().map((a) =>
+        `<option value="${esc(a.id)}"${a.id === urlAssetId ? " selected" : ""}>${esc(a.name)}</option>`
+      ).join("");
+      const typeSel = document.querySelector("[data-filter='vulnType']");
+      typeSel.innerHTML = '<option value="">全部</option>' + Object.entries(AS.VULN_TYPE_LABEL).map(([k, v]) =>
+        `<option value="${k}">${esc(v)}</option>`
+      ).join("");
+    }
+
+    function renderStageTabs() {
+      const tabs = [{ key: "", label: "全部" }].concat(AS.STAGE_ORDER.map((k) => ({ key: k, label: AS.STAGE_META[k].label })));
+      document.getElementById("asStageTabs").innerHTML = tabs.map((t) =>
+        `<button class="tab${t.key === currentStage ? " active" : ""}" type="button" role="tab" data-stage="${esc(t.key)}">${esc(t.label)}</button>`
+      ).join("");
+    }
+
+    function refreshMetrics() {
+      const m = AS.vulnMetrics();
+      document.querySelectorAll("#asVulnMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("asVulnPager").innerHTML = html;
+    }
+
+    function actionButtons(row) {
+      const acts = NEXT_ACTIONS[row.stage] || [];
+      const advance = acts.map((a) =>
+        `<button class="table-action" type="button" data-row="advance" data-action-key="${a.action}" data-id="${esc(row.id)}">${esc(a.label)}</button>`
+      ).join("");
+      return `<button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>${advance}`;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = AS.listVulns({
+        assetId: f.assetId || undefined,
+        vulnType: f.vulnType || undefined,
+        level: f.level || undefined,
+        owner: f.owner || undefined,
+        stage: currentStage || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("asVulnBody").innerHTML = pageRows.map((row) => `<tr data-id="${esc(row.id)}">
+        <td>${dash(row.title)}</td>
+        <td>${esc(AS.vulnTypeLabel(row.vulnType))}</td>
+        <td>${esc(assetName(row.assetId))}</td>
+        <td>${tagHtml(AS.levelMeta(row.level))}</td>
+        <td>${tagHtml(AS.stageMeta(row.stage))}</td>
+        <td>${dash(row.foundAt)}</td>
+        <td>${dash(row.owner)}</td>
+        <td class="user-actions-col">${actionButtons(row)}</td>
+      </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function openDetail(id) {
+      const row = AS.getVuln(id);
+      if (!row) return;
+      const timeline = (row.timeline || []).map((t) =>
+        `<li><span class="as-time">${esc(t.at)} · ${esc(t.by)}</span><strong>${esc(t.action)}</strong>${t.note ? ` — ${esc(t.note)}` : ""}</li>`
+      ).join("") || "<li>暂无记录</li>";
+      const acts = NEXT_ACTIONS[row.stage] || [];
+      const advanceBtns = acts.map((a) =>
+        `<button class="btn btn-secondary" type="button" data-row="advance" data-action-key="${a.action}" data-id="${esc(row.id)}">${esc(a.label)}</button>`
+      ).join("");
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("标题", dash(row.title))}
+            ${infoItem("类型", esc(AS.vulnTypeLabel(row.vulnType)))}
+            ${infoItem("关联资产", `<a href="ledger.html?assetId=${encodeURIComponent(row.assetId)}">${esc(assetName(row.assetId))}</a>`)}
+            ${infoItem("等级", tagHtml(AS.levelMeta(row.level)))}
+            ${infoItem("阶段", tagHtml(AS.stageMeta(row.stage)))}
+            ${infoItem("责任人", dash(row.owner))}
+            ${infoItem("发现时间", dash(row.foundAt))}
+            ${infoItem("截止日期", dash(row.dueAt))}
+            ${infoItem("关闭原因", dash(row.closeReason))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">处置时间线</h3>
+          <ul class="as-timeline">${timeline}</ul>
+        </section>
+        ${advanceBtns ? `<div class="as-detail-links">${advanceBtns}</div>` : ""}`;
+      window.openAppDrawer({ title: "脆弱性详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function doAdvance(id, action) {
+      if (action === "assign") {
+        const row = AS.getVuln(id);
+        const body = `<label class="form-field form-item"><span class="form-label form-required">派单责任人</span><input class="form-control" id="asAssignOwner" value="${esc(row?.owner || "")}" placeholder="请输入"></label>
+          <label class="form-field form-item"><span class="form-label">备注</span><textarea class="form-control textarea" id="asAssignNote" placeholder="请输入"></textarea></label>`;
+        window.openAppDrawer({
+          title: "派单",
+          body,
+          footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="assign" data-id="${esc(id)}">确认</button>`,
+        });
+        return;
+      }
+      const note = action === "false_positive" ? "误报" : "";
+      const result = AS.advanceVulnStage(id, action, note);
+      if (!result.ok) {
+        alert(result.message || "推进失败");
+        return;
+      }
+      window.closeAppDrawer();
+      render();
+    }
+
+    fillFilters();
+    renderStageTabs();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const stageTab = event.target.closest("#asStageTabs [data-stage]");
+      if (stageTab) {
+        currentStage = stageTab.dataset.stage;
+        renderStageTabs();
+        currentPage = 1;
+        render();
+        return;
+      }
+
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        if (urlAssetId) document.querySelector("[data-filter='assetId']").value = urlAssetId;
+        currentPage = 1;
+        render();
+      }
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "detail") openDetail(id);
+        if (rowBtn.dataset.row === "advance") doAdvance(id, rowBtn.dataset.actionKey);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (submit?.dataset.drawerSubmit === "assign") {
+        const owner = document.getElementById("asAssignOwner")?.value.trim();
+        if (!owner) { alert("请填写责任人"); return; }
+        const note = document.getElementById("asAssignNote")?.value.trim() || owner;
+        const result = AS.advanceVulnStage(submit.dataset.id, "assign", note);
+        if (!result.ok) { alert(result.message || "派单失败"); return; }
+        window.closeAppDrawer();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

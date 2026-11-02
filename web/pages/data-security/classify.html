@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据分类分级 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/datasec.css">
+</head>
+<body class="ds-sec-page" data-menu-key="datasec.classify" data-page-section="数据安全" data-page-title="数据分类分级">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsClassifyMetrics">
+          <article class="metric-card"><div class="metric-label">资产总数</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">一般数据</div><div class="metric-number" data-m="general">0</div></article>
+          <article class="metric-card"><div class="metric-label">重要数据</div><div class="metric-number" data-m="important">0</div></article>
+          <article class="metric-card"><div class="metric-label">核心数据</div><div class="metric-number" data-m="core">0</div></article>
+          <article class="metric-card"><div class="metric-label">待重定级</div><div class="metric-number" data-m="needsRegrade">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">数据级别</span>
+              <select class="form-control" data-filter="level">
+                <option value="">全部</option>
+                <option value="general">一般</option>
+                <option value="important">重要</option>
+                <option value="core">核心</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">业务系统</span>
+              <select class="form-control" data-filter="system"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">公开范围</span>
+              <select class="form-control" data-filter="openScope">
+                <option value="">全部</option>
+                <option value="internal">内部</option>
+                <option value="limited">受限共享</option>
+                <option value="public">可公开</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="名称/责任人">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">数据资产目录</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 登记资产</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>资产名称</th><th>所属系统</th><th>数据类别</th><th>级别</th><th>公开范围</th>
+                  <th>责任人/部门</th><th>最近定级</th><th>目录状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsClassifyBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsClassifyPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/datasec-mock.js"></script>
+  <script>
+    const DS = window.DataSec;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let currentPage = 1;
+    const pageSize = 10;
+    let lastTotal = 0;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "<span>-</span>";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+    function fillSystems() {
+      const sel = document.querySelector("[data-filter='system']");
+      sel.innerHTML = '<option value="">全部</option>' + DS.listSystems().map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+    }
+    function refreshMetrics() {
+      const m = DS.classifyMetrics();
+      document.querySelectorAll("#dsClassifyMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+    function renderPager(total) {
+      lastTotal = total;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsClassifyPager").innerHTML = html;
+    }
+    function render() {
+      const f = readFilter();
+      const res = DS.listAssets({
+        level: f.level || undefined,
+        system: f.system || undefined,
+        openScope: f.openScope || undefined,
+        keyword: f.keyword || undefined,
+        page: currentPage,
+        pageSize,
+      });
+      renderPager(res.total);
+      document.getElementById("dsClassifyBody").innerHTML = res.list.map((row) => `<tr>
+        <td>${dash(row.name)}</td><td>${dash(row.system)}</td><td>${dash(row.category)}</td>
+        <td>${tagHtml(DS.levelTag(row.level))}</td><td>${tagHtml(DS.scopeTag(row.openScope))}</td>
+        <td>${dash(row.owner)} / ${dash(row.dept)}</td><td>${dash(row.gradedAt)}</td>
+        <td>${tagHtml(DS.catalogTag(row.catalogStatus))}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          <button class="table-action" type="button" data-row="regrade" data-id="${esc(row.id)}">重新定级</button>
+          <button class="table-action" type="button" data-row="file" data-id="${esc(row.id)}">目录备案</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+    function openDetail(id) {
+      const row = DS.getAsset(id);
+      if (!row) return;
+      const logs = row.changeLogs || [];
+      const logTable = logs.length
+        ? `<table class="ds-sec-changelog"><thead><tr><th>时间</th><th>原级别</th><th>新级别</th><th>理由</th><th>操作人</th></tr></thead><tbody>${logs.map((l) => `<tr><td>${dash(l.at)}</td><td>${esc(DS.levelTag(l.from).label)}</td><td>${esc(DS.levelTag(l.to).label)}</td><td>${dash(l.reason)}</td><td>${dash(l.operator)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="ds-sec-empty">暂无变更记录</div>`;
+      const body = `
+        <section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("资产名称", dash(row.name))}${infoItem("所属系统", dash(row.system))}
+            ${infoItem("数据类别", dash(row.category))}${infoItem("数据级别", tagHtml(DS.levelTag(row.level)))}
+            ${infoItem("公开范围", tagHtml(DS.scopeTag(row.openScope)))}${infoItem("责任人", dash(row.owner))}
+            ${infoItem("部门", dash(row.dept))}${infoItem("目录状态", tagHtml(DS.catalogTag(row.catalogStatus)))}
+            ${infoItem("最近定级", dash(row.gradedAt))}${infoItem("备案号", dash(row.filingNo))}
+            ${infoItem("备案说明", dash(row.filingNote))}
+          </div>
+        </section>
+        <section class="detail-section ds-sec-detail-subsection"><h3 class="detail-title">分类分级依据</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("业务属性", dash(row.businessAttr))}${infoItem("使用场景", dash(row.scene))}
+            ${infoItem("待重定级", row.needsRegrade ? "是" : "否")}
+          </div>
+        </section>
+        <section class="detail-section ds-sec-detail-subsection"><h3 class="detail-title">变更记录</h3>${logTable}</section>`;
+      window.openAppDrawer({ title: "资产详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+    function levelOpts(selected) {
+      return ["general", "important", "core"].map((k) => `<option value="${k}" ${selected === k ? "selected" : ""}>${esc(DS.levelTag(k).label)}</option>`).join("");
+    }
+    function scopeOpts(selected) {
+      return ["internal", "limited", "public"].map((k) => `<option value="${k}" ${selected === k ? "selected" : ""}>${esc(DS.scopeTag(k).label)}</option>`).join("");
+    }
+    function openCreate() {
+      const body = `
+        <div class="form-grid-2">
+          <label class="form-field"><span class="form-label form-required">资产名称</span><input class="form-control" id="cName"></label>
+          <label class="form-field"><span class="form-label">所属系统</span><input class="form-control" id="cSystem"></label>
+          <label class="form-field"><span class="form-label">数据类别</span><input class="form-control" id="cCategory"></label>
+          <label class="form-field"><span class="form-label">数据级别</span><select class="form-control" id="cLevel">${levelOpts("general")}</select></label>
+          <label class="form-field"><span class="form-label">公开范围</span><select class="form-control" id="cScope">${scopeOpts("internal")}</select></label>
+          <label class="form-field"><span class="form-label">责任人</span><input class="form-control" id="cOwner"></label>
+          <label class="form-field"><span class="form-label">部门</span><input class="form-control" id="cDept"></label>
+          <label class="form-field"><span class="form-label">业务属性</span><input class="form-control" id="cAttr"></label>
+          <label class="form-field"><span class="form-label">使用场景</span><input class="form-control" id="cScene"></label>
+        </div>`;
+      window.openAppDrawer({ title: "登记资产", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="create">确认</button>' });
+    }
+    function openRegrade(id) {
+      const row = DS.getAsset(id);
+      if (!row) return;
+      const body = `
+        <div class="form-grid-2">
+          <label class="form-field"><span class="form-label form-required">新级别</span><select class="form-control" id="rLevel">${levelOpts(row.level)}</select></label>
+          <label class="form-field"><span class="form-label">公开范围</span><select class="form-control" id="rScope">${scopeOpts(row.openScope)}</select></label>
+          <label class="form-field"><span class="form-label">业务属性</span><input class="form-control" id="rAttr" value="${esc(row.businessAttr || "")}"></label>
+          <label class="form-field"><span class="form-label">使用场景</span><input class="form-control" id="rScene" value="${esc(row.scene || "")}"></label>
+          <label class="form-field" style="grid-column:1/-1"><span class="form-label form-required">定级理由</span><textarea class="form-control textarea" id="rReason"></textarea></label>
+        </div>`;
+      window.openAppDrawer({ title: "重新定级", body, footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="regrade" data-id="${esc(id)}">确认</button>` });
+    }
+    function openFile(id) {
+      const row = DS.getAsset(id);
+      if (!row) return;
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">备案号</span><input class="form-control" id="fNo" value="${esc(row.filingNo || "")}"></label>
+        <label class="form-field form-item"><span class="form-label">备案说明</span><textarea class="form-control textarea" id="fNote">${esc(row.filingNote || "")}</textarea></label>`;
+      window.openAppDrawer({ title: "目录备案", body, footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="file" data-id="${esc(id)}">确认</button>` });
+    }
+
+    fillSystems();
+    render();
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") { document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; }); currentPage = 1; render(); }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "create") openCreate();
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "regrade") openRegrade(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "file") openFile(rowBtn.dataset.id);
+      }
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next" && currentPage < Math.max(1, Math.ceil(lastTotal / pageSize))) { currentPage += 1; render(); }
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "create") {
+        const name = document.getElementById("cName")?.value.trim();
+        if (!name) { alert("请填写资产名称"); return; }
+        DS.createAsset({
+          name, system: document.getElementById("cSystem").value.trim(), category: document.getElementById("cCategory").value.trim(),
+          level: document.getElementById("cLevel").value, openScope: document.getElementById("cScope").value,
+          owner: document.getElementById("cOwner").value.trim(), dept: document.getElementById("cDept").value.trim(),
+          businessAttr: document.getElementById("cAttr").value.trim(), scene: document.getElementById("cScene").value.trim(),
+        });
+        window.closeAppDrawer(); currentPage = 1; fillSystems(); render();
+      }
+      if (submit.dataset.drawerSubmit === "regrade") {
+        const reason = document.getElementById("rReason")?.value.trim();
+        if (!reason) { alert("请填写定级理由"); return; }
+        DS.regradeAsset(submit.dataset.id, {
+          level: document.getElementById("rLevel").value, openScope: document.getElementById("rScope").value,
+          businessAttr: document.getElementById("rAttr").value.trim(), scene: document.getElementById("rScene").value.trim(), reason,
+        });
+        window.closeAppDrawer(); render();
+      }
+      if (submit.dataset.drawerSubmit === "file") {
+        const filingNo = document.getElementById("fNo")?.value.trim();
+        if (!filingNo) { alert("请填写备案号"); return; }
+        DS.fileCatalog(submit.dataset.id, { filingNo, filingNote: document.getElementById("fNote").value.trim() });
+        window.closeAppDrawer(); render();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>主机详情 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="sm-page" data-menu-key="monitor.server" data-page-section="性能监测" data-page-title="主机详情">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack" id="smDetailRoot"></div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/server-monitor-mock.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const hostId = params.get("id");
+    let host = window.ServerMonitor.getHost(hostId);
+    const vizBag = [];
+    let loadChart = null;
+    let stackChart = null;
+    const root = document.getElementById("smDetailRoot");
+
+    function renderEmpty() {
+      root.innerHTML = `
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">主机详情</h1>
+            <p class="page-desc">未找到指定主机。</p>
+          </div>
+          <div class="btn-row">
+            <a class="btn btn-secondary" href="./server.html"><i class="fa-solid fa-arrow-left"></i> 返回列表</a>
+          </div>
+        </section>
+        <section class="card pad"><p class="helper-text">请从服务器监测管理列表重新进入。</p></section>`;
+    }
+
+    function paint() {
+      if (!host) {
+        renderEmpty();
+        return;
+      }
+      const st = window.ServerMonitor.getStatus(host);
+      document.body.dataset.pageTitle = host.name;
+      const titleEl = document.querySelector(".header-title, .page-title");
+      const cpu = window.ServerMonitor.buildCpuMetrics(host);
+      const viz = window.ServerMonitor.buildVizMetrics(host);
+
+      root.innerHTML = `
+        <div class="sm-page-nav">
+          <a class="btn btn-secondary" href="./server.html"><i class="fa-solid fa-arrow-left"></i> 返回列表</a>
+          <div class="btn-row">
+            <span class="tag">${host.os}</span>
+            <span class="tag">${host.ip}</span>
+            <span class="tag ${st.tagClass}">${st.label}</span>
+          </div>
+        </div>
+
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">${host.name}</h1>
+            <p class="page-desc">主机可视化监控与 CPU 专项指标。</p>
+          </div>
+        </section>
+
+        <section class="card pad">
+          <div class="card-title-row"><h2 class="card-title">主机信息</h2></div>
+          <div class="sm-info-grid">
+            <div class="info-item"><span class="info-label">主机名称</span><span class="info-value">${host.name}</span></div>
+            <div class="info-item"><span class="info-label">操作系统</span><span class="info-value">${host.os}</span></div>
+            <div class="info-item"><span class="info-label">IP 地址</span><span class="info-value">${host.ip}</span></div>
+            <div class="info-item"><span class="info-label">所属区域</span><span class="info-value">${host.region}</span></div>
+            <div class="info-item"><span class="info-label">最近采样</span><span class="info-value">${host.sampledAt}</span></div>
+            <div class="info-item"><span class="info-label">CPU 阈值</span><span class="info-value">${cpu.threshold}%</span></div>
+          </div>
+        </section>
+
+        <h2 class="sm-section-title">主机可视化监控</h2>
+        <div class="sm-viz-grid" id="smVizCharts"></div>
+
+        <h2 class="sm-section-title">主机 CPU 监控</h2>
+        <p class="sm-threshold-line">当前 CPU 使用率 <strong>${host.online ? host.cpuUsage + "%" : "—"}</strong>　/　阈值 <strong>${cpu.threshold}%</strong>　·　状态 <span class="tag ${st.tagClass}">${st.label}</span></p>
+        <div class="sm-cpu-metrics" id="smCpuCards"></div>
+        <div class="sm-cpu-charts">
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>CPU 负载（1 / 5 / 15 分钟）</h3></div>
+            <div class="sm-chart-el" id="smCpuLoad"></div>
+          </article>
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>CPU 时间构成</h3></div>
+            <div class="sm-chart-el" id="smCpuStack"></div>
+          </article>
+        </div>`;
+
+      document.getElementById("smCpuCards").innerHTML = cpu.cards
+        .map((c) => `<div class="sm-cpu-metric"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`)
+        .join("");
+
+      window.ServerMonitor.renderVizCharts(document.getElementById("smVizCharts"), viz, echarts, vizBag);
+
+      loadChart?.dispose?.();
+      stackChart?.dispose?.();
+      loadChart = echarts.init(document.getElementById("smCpuLoad"));
+      stackChart = echarts.init(document.getElementById("smCpuStack"));
+      loadChart.setOption(window.ServerMonitor.cpuLoadOption(cpu.load));
+      stackChart.setOption(window.ServerMonitor.cpuStackOption(cpu.stack));
+
+    }
+
+    paint();
+    window.addEventListener("resize", () => {
+      vizBag.forEach((c) => c.resize());
+      loadChart?.resize();
+      stackChart?.resize();
+    });
+  </script>
+</body>
+</html>

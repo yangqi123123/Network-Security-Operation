@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据风险态势 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/datasec.css">
+</head>
+<body class="ds-sec-page" data-menu-key="datasec.situation" data-page-section="数据安全" data-page-title="数据风险态势">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsSitMetrics">
+          <article class="metric-card"><div class="metric-label">今日监测事件</div><div class="metric-number" data-m="today">0</div></article>
+          <article class="metric-card"><div class="metric-label">异常待研判</div><div class="metric-number" data-m="pending">0</div></article>
+          <article class="metric-card"><div class="metric-label">已定位风险源</div><div class="metric-number" data-m="sourced">0</div></article>
+          <article class="metric-card"><div class="metric-label">已整改</div><div class="metric-number" data-m="fixed">0</div></article>
+        </section>
+
+        <section class="ds-sec-board" id="dsSitBoard"></section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">风险类型</span>
+              <select class="form-control" data-filter="riskType"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">严重级别</span>
+              <select class="form-control" data-filter="severity">
+                <option value="">全部</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+                <option value="critical">严重</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">处置状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="pending">待研判</option>
+                <option value="confirmed">待整改</option>
+                <option value="false_positive">误报</option>
+                <option value="fixing">整改中</option>
+                <option value="fixed">已修复</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">开始日期</span>
+              <input class="form-control" data-filter="dateFrom" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">结束日期</span>
+              <input class="form-control" data-filter="dateTo" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="摘要/系统/主体">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">异常事件列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>发现时间</th><th>风险类型</th><th>摘要</th><th>涉及系统</th><th>主体</th>
+                  <th>严重级别</th><th>研判状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsSitBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsSitPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/datasec-mock.js"></script>
+  <script>
+    const DS = window.DataSec;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let currentPage = 1;
+    const pageSize = 10;
+    let lastTotal = 0;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "<span>-</span>";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+    function fillRiskTypes() {
+      const sel = document.querySelector("[data-filter='riskType']");
+      sel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.RISK_TYPE_LABEL).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+    }
+    function refreshMetrics() {
+      const m = DS.situationMetrics();
+      document.querySelectorAll("#dsSitMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+    function renderBoard() {
+      const charts = DS.situationCharts();
+      const maxType = Math.max(1, ...charts.byType.map((x) => x.count));
+      const bars = charts.byType.map((x) => `
+        <div class="ds-sec-bar-row">
+          <span>${esc(x.label)}</span>
+          <div class="ds-sec-bar-track"><div class="ds-sec-bar-fill" style="width:${Math.round((x.count / maxType) * 100)}%"></div></div>
+          <span>${x.count}</span>
+        </div>`).join("");
+      const hours = charts.trend24h.filter((_, i) => i % 2 === 0);
+      const maxH = Math.max(1, ...hours.map((x) => x.count));
+      const trend = hours.map((x) => {
+        const h = Math.max(4, Math.round((x.count / maxH) * 80));
+        return `<div class="ds-sec-trend-col"><div class="ds-sec-trend-bar" style="height:${h}px" title="${x.count}"></div><div class="ds-sec-trend-label">${esc(x.hour)}</div></div>`;
+      }).join("");
+      document.getElementById("dsSitBoard").innerHTML = `
+        <section class="card ds-sec-chart-card"><div class="ds-sec-chart-title">风险类型分布</div>${bars}</section>
+        <section class="card ds-sec-chart-card"><div class="ds-sec-chart-title">近 24h 趋势（每 2 小时）</div><div class="ds-sec-trend">${trend}</div></section>`;
+    }
+    function renderPager(total) {
+      lastTotal = total;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsSitPager").innerHTML = html;
+    }
+    function render() {
+      const f = readFilter();
+      const res = DS.listEvents({
+        riskType: f.riskType || undefined,
+        severity: f.severity || undefined,
+        status: f.status || undefined,
+        dateFrom: f.dateFrom || undefined,
+        dateTo: f.dateTo || undefined,
+        keyword: f.keyword || undefined,
+        page: currentPage,
+        pageSize,
+      });
+      renderPager(res.total);
+      document.getElementById("dsSitBody").innerHTML = res.list.map((row) => {
+        const canHandle = row.status !== "fixed" && row.status !== "false_positive";
+        return `<tr>
+          <td>${dash(row.detectedAt)}</td>
+          <td>${esc(DS.riskTypeLabel(row.riskType))}</td>
+          <td>${dash(row.summary)}</td>
+          <td>${dash(row.system)}</td>
+          <td>${dash(row.subject)}</td>
+          <td>${tagHtml(DS.severityTag(row.severity))}</td>
+          <td>${tagHtml(DS.eventStatusTag(row.status))}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            ${canHandle ? `<button class="table-action" type="button" data-row="handle" data-id="${esc(row.id)}">研判处置</button>` : ""}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+      renderBoard();
+    }
+    function openDetail(id) {
+      const row = DS.getEvent(id);
+      if (!row) return;
+      const ctx = row.context || {};
+      const body = `
+        <section class="detail-section"><h3 class="detail-title">事件信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("发现时间", dash(row.detectedAt))}${infoItem("风险类型", esc(DS.riskTypeLabel(row.riskType)))}
+            ${infoItem("严重级别", tagHtml(DS.severityTag(row.severity)))}${infoItem("研判状态", tagHtml(DS.eventStatusTag(row.status)))}
+            ${infoItem("涉及系统", dash(row.system))}${infoItem("主体", dash(row.subject))}
+            ${infoItem("摘要", dash(row.summary))}
+          </div>
+        </section>
+        <section class="detail-section ds-sec-detail-subsection"><h3 class="detail-title">流动/访问上下文</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("账号", dash(ctx.account))}${infoItem("路径", dash(ctx.path))}
+            ${infoItem("目标", dash(ctx.target))}${infoItem("体量", dash(ctx.volume))}
+          </div>
+        </section>
+        <section class="detail-section ds-sec-detail-subsection"><h3 class="detail-title">源头与建议</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("风险源头", dash(row.sourceHint))}${infoItem("整改建议", dash(row.advice))}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "事件详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+    function openHandle(id) {
+      const row = DS.getEvent(id);
+      if (!row) return;
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">研判结论</span>
+          <select class="form-control" id="hVerdict">
+            <option value="confirm">确认风险</option>
+            <option value="false_positive">误报</option>
+          </select>
+        </label>
+        <label class="form-field form-item" id="hStatusWrap"><span class="form-label">整改状态</span>
+          <select class="form-control" id="hStatus">
+            <option value="confirmed">待整改</option>
+            <option value="fixing">整改中</option>
+            <option value="fixed">已修复</option>
+          </select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">风险源头</span><input class="form-control" id="hSource" value="${esc(row.sourceHint || "")}"></label>
+        <label class="form-field form-item"><span class="form-label">整改建议</span><textarea class="form-control textarea" id="hAdvice">${esc(row.advice || "")}</textarea></label>`;
+      window.openAppDrawer({ title: "研判处置", body, footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="handle" data-id="${esc(id)}">确认</button>` });
+      setTimeout(() => {
+        const verdict = document.getElementById("hVerdict");
+        const wrap = document.getElementById("hStatusWrap");
+        const sync = () => { wrap.style.display = verdict.value === "confirm" ? "" : "none"; };
+        verdict.addEventListener("change", sync);
+        sync();
+      }, 0);
+    }
+
+    fillRiskTypes();
+    render();
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search" || action === "refresh") { if (action === "search") currentPage = 1; render(); }
+      if (action === "reset") { document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; }); currentPage = 1; render(); }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "handle") openHandle(rowBtn.dataset.id);
+      }
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next" && currentPage < Math.max(1, Math.ceil(lastTotal / pageSize))) { currentPage += 1; render(); }
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit || submit.dataset.drawerSubmit !== "handle") return;
+      const verdict = document.getElementById("hVerdict").value;
+      DS.handleEvent(submit.dataset.id, {
+        verdict,
+        sourceHint: document.getElementById("hSource").value.trim(),
+        advice: document.getElementById("hAdvice").value.trim(),
+        status: verdict === "confirm" ? document.getElementById("hStatus").value : undefined,
+      });
+      window.closeAppDrawer();
+      render();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安装软件 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/device-mgmt.css">
+</head>
+<body class="dm-list-page" data-menu-key="device.software" data-page-section="设备管理" data-page-title="安装软件">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">安装软件</h1>
+            <p class="page-desc">查看 Windows / Linux 服务器已安装软件与服务运行状态。</p>
+          </div>
+        </section>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">设备</span>
+              <select class="form-control" data-filter="deviceId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">操作系统</span>
+              <select class="form-control" data-filter="os">
+                <option value="">全部</option>
+                <option value="Windows">Windows</option>
+                <option value="Linux">Linux</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">软件名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">运行状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="running">运行中</option>
+                <option value="stopped">已停止</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar"><h2 class="card-title">软件服务列表</h2></div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>软件/服务名</th><th>版本</th><th>发布者</th><th>安装路径</th>
+                  <th>运行状态</th><th>上次检查</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="swBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="swPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const DM = window.DeviceMgmt;
+    let filter = {};
+    let rows = [];
+    let page = 1;
+    const pageSize = 10;
+
+    const deviceSel = document.querySelector('[data-filter="deviceId"]');
+    DM.listDevices().filter((d) => String(d.category).includes("server")).forEach((d) => {
+      deviceSel.insertAdjacentHTML("beforeend", `<option value="${d.id}">${d.name}</option>`);
+    });
+
+    function deviceName(id) {
+      return DM.getDevice(id)?.name || id;
+    }
+
+    function applyFilter() {
+      rows = DM.listSoftware(filter);
+      page = 1;
+      render();
+    }
+
+    function render() {
+      const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+      page = Math.min(page, totalPages);
+      const slice = rows.slice((page - 1) * pageSize, page * pageSize);
+      document.getElementById("swBody").innerHTML = slice.map((s) => {
+        const st = DM.softwareStatusTag(s.status);
+        return `<tr data-id="${s.id}">
+          <td><strong>${s.name}</strong><br><small class="status-muted">${deviceName(s.deviceId)} · ${s.os}</small></td>
+          <td>${s.version || "-"}</td>
+          <td>${s.publisher || "-"}</td>
+          <td title="${s.path || ""}">${s.path || "-"}</td>
+          <td><span class="tag ${st.tagClass}">${st.label}</span></td>
+          <td>${s.checkedAt || "-"}</td>
+          <td class="user-actions-col"><button class="table-action" type="button" data-sw="detail" data-id="${s.id}">详情</button></td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="7" class="dm-empty">暂无软件记录</td></tr>`;
+
+      let pager = `<span>共 <strong>${rows.length}</strong> 条记录，每页 10 条</span>`;
+      pager += `<span class="page-item${page === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= totalPages; i += 1) pager += `<span class="page-item${i === page ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      pager += `<span class="page-item${page === totalPages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("swPager").innerHTML = pager;
+    }
+
+    function openDetail(s) {
+      const st = DM.softwareStatusTag(s.status);
+      window.openAppDrawer({
+        title: "软件详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">软件/服务名</span><span class="info-value">${s.name}</span></div>
+            <div class="info-item"><span class="info-label">所属设备</span><span class="info-value">${deviceName(s.deviceId)}</span></div>
+            <div class="info-item"><span class="info-label">版本</span><span class="info-value">${s.version || "-"}</span></div>
+            <div class="info-item"><span class="info-label">发布者</span><span class="info-value">${s.publisher || "-"}</span></div>
+            <div class="info-item"><span class="info-label">操作系统</span><span class="info-value">${s.os || "-"}</span></div>
+            <div class="info-item"><span class="info-label">运行状态</span><span class="info-value"><span class="tag ${st.tagClass}">${st.label}</span></span></div>
+            <div class="info-item"><span class="info-label">安装路径</span><span class="info-value">${s.path || "-"}</span></div>
+            <div class="info-item"><span class="info-label">上次检查</span><span class="info-value">${s.checkedAt || "-"}</span></div>
+            <div class="info-item"><span class="info-label">备注信息</span><span class="info-value">-</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    document.addEventListener("click", (e) => {
+      const action = e.target.closest("[data-action]")?.dataset.action;
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        filter = {};
+        applyFilter();
+      }
+      if (action === "search") {
+        filter = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+        applyFilter();
+      }
+      const pn = e.target.closest("[data-page-number]");
+      const pa = e.target.closest("[data-page-action]");
+      if (pn) { page = Number(pn.dataset.pageNumber); render(); }
+      if (pa) {
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        page = pa.dataset.pageAction === "prev" ? Math.max(1, page - 1) : Math.min(totalPages, page + 1);
+        render();
+      }
+      const btn = e.target.closest("[data-sw]");
+      if (btn?.dataset.sw === "detail") {
+        const s = DM.listSoftware().find((x) => x.id === btn.dataset.id);
+        if (s) openDetail(s);
+      }
+    });
+
+    applyFilter();
+  </script>
+</body>
+</html>

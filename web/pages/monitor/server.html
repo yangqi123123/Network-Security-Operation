@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>服务器监测管理 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="sm-page" data-menu-key="monitor.server" data-page-section="性能监测" data-page-title="服务器监测管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">服务器监测管理</h1>
+            <p class="page-desc">多操作系统主机资源实时监测，超阈值状态一目了然。</p>
+          </div>
+        </section>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">主机名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">操作系统</span>
+              <select class="form-control" data-filter="os">
+                <option value="">全部</option>
+                <option value="AIX">AIX</option>
+                <option value="Windows">Windows</option>
+                <option value="Linux">Linux</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">监测状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="normal">正常</option>
+                <option value="alert">告警</option>
+                <option value="offline">离线</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">所属区域</span><input class="form-control" data-filter="region" placeholder="请输入"></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="sm-summary-grid">
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>主机状态分布</h3></div>
+            <div class="sm-chart-el" id="smPie"></div>
+          </article>
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>近 24h 平均 CPU 使用率</h3></div>
+            <div class="sm-chart-el" id="smCpuTrend"></div>
+          </article>
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>资源平均占用</h3></div>
+            <div class="sm-chart-el" id="smResourceBar"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">服务器列表</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th class="check-cell"><input type="checkbox" data-select-all></th>
+                  <th>主机名称</th>
+                  <th>操作系统</th>
+                  <th>IP 地址</th>
+                  <th>CPU 使用率</th>
+                  <th>1/5/15 负载</th>
+                  <th>监测状态</th>
+                  <th>最近采样</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="smTableBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <span>共 <strong id="smCount">0</strong> 条记录，每页 10 条</span>
+            <span class="page-item" data-page-action="prev">‹</span>
+            <span class="page-item active" data-page-number="1">1</span>
+            <span class="page-item" data-page-number="2">2</span>
+            <span class="page-item" data-page-action="next">›</span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/server-monitor-mock.js"></script>
+  <script>
+    const charts = { pie: null, trend: null, bar: null };
+    let allHosts = window.ServerMonitor.listHosts();
+    let filtered = allHosts.slice();
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function getFilters() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function applyFilter() {
+      const f = getFilters();
+      filtered = allHosts.filter((h) => {
+        const st = window.ServerMonitor.getStatus(h).key;
+        return (!f.name || h.name.includes(f.name))
+          && (!f.os || h.os === f.os)
+          && (!f.status || st === f.status)
+          && (!f.region || h.region.includes(f.region));
+      });
+      currentPage = 1;
+      renderTable();
+    }
+
+    function renderSummary() {
+      const summary = window.ServerMonitor.aggregateSummary(allHosts);
+      if (!charts.pie) charts.pie = echarts.init(document.getElementById("smPie"));
+      if (!charts.trend) charts.trend = echarts.init(document.getElementById("smCpuTrend"));
+      if (!charts.bar) charts.bar = echarts.init(document.getElementById("smResourceBar"));
+      charts.pie.setOption(window.ServerMonitor.pieOption(summary.pie));
+      charts.trend.setOption(window.ServerMonitor.trendOption(summary.cpuTrend));
+      charts.bar.setOption(window.ServerMonitor.barOption(summary.resourceBars));
+    }
+
+    function renderPagination() {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const box = document.querySelector(".pagination");
+      const items = [];
+      items.push(`<span>共 <strong id="smCount">${filtered.length}</strong> 条记录，每页 10 条</span>`);
+      items.push(`<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`);
+      for (let i = 1; i <= totalPages; i += 1) {
+        items.push(`<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`);
+      }
+      items.push(`<span class="page-item${currentPage === totalPages ? " disabled" : ""}" data-page-action="next">›</span>`);
+      box.innerHTML = items.join("");
+    }
+
+    function renderTable() {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("smTableBody").innerHTML = pageRows.map((h) => {
+        const st = window.ServerMonitor.getStatus(h);
+        return `<tr data-host-id="${h.id}">
+          <td class="check-cell"><input type="checkbox"></td>
+          <td><strong>${h.name}</strong></td>
+          <td><span class="tag">${h.os}</span></td>
+          <td>${h.ip}</td>
+          <td>${h.online ? h.cpuUsage + "%" : "—"}</td>
+          <td>${h.online ? `${h.load1} / ${h.load5} / ${h.load15}` : "—"}</td>
+          <td><span class="tag ${st.tagClass}">${st.label}</span></td>
+          <td>${h.sampledAt}</td>
+          <td class="user-actions-col"><button class="table-action" type="button" data-view="${h.id}">查看</button></td>
+        </tr>`;
+      }).join("");
+      renderPagination();
+    }
+
+    function goDetail(id) {
+      location.href = `./server-detail.html?id=${encodeURIComponent(id)}`;
+    }
+
+    function paint() {
+      renderSummary();
+      renderTable();
+    }
+
+    paint();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") applyFilter();
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        filtered = allHosts.slice();
+        currentPage = 1;
+        paint();
+      }
+      const view = event.target.closest("[data-view]");
+      if (view) goDetail(view.dataset.view);
+      const pageNumber = event.target.closest("[data-page-number]");
+      const pageAction = event.target.closest("[data-page-action]");
+      if (pageNumber) {
+        currentPage = Number(pageNumber.dataset.pageNumber);
+        renderTable();
+      }
+      if (pageAction && !pageAction.classList.contains("disabled")) {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        currentPage = pageAction.dataset.pageAction === "prev"
+          ? Math.max(1, currentPage - 1)
+          : Math.min(totalPages, currentPage + 1);
+        renderTable();
+      }
+      const row = event.target.closest("#smTableBody tr");
+      if (row && !event.target.closest("button, input, select, a")) goDetail(row.dataset.hostId);
+    });
+
+    window.addEventListener("resize", () => {
+      charts.pie?.resize();
+      charts.trend?.resize();
+      charts.bar?.resize();
+    });
+  </script>
+</body>
+</html>

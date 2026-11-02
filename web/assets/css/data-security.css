@@ -1,0 +1,228 @@
+/* 数据安全管理：SQL 预览、流转路径、阶段 Tab（选中态对齐设备台账 .tab.active） */
+.dsec-sql {
+  margin: 0;
+  padding: 12px;
+  background: var(--primary-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-title);
+  max-height: 160px;
+  overflow: auto;
+}
+
+.dsec-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.dsec-path .dsec-path-node {
+  padding: 4px 8px;
+  background: var(--primary-bg);
+  border-radius: var(--radius-sm);
+}
+
+.dsec-path .dsec-path-arrow {
+  color: var(--text-secondary);
+}
+
+.dsec-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dsec-tabs .tab {
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.dsec-tabs .tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+
+.dsec-evidence {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.dsec-filter-tip {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dsec-filter-tip a {
+  color: var(--primary);
+  cursor: pointer;
+}
+
+/*
+ * 列表工作台：主区锁死在视口高度，仅 .table-wrap 产生滚动。
+ * 必须让 .table-wrap 成为真正的横向/纵向 scrollport，操作列 sticky 才生效。
+ * 对齐桌面安全管理 ds-page / 访问控制 ac-page。
+ */
+body.dsec-page {
+  overflow: hidden;
+}
+
+body.dsec-page .app-shell {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+body.dsec-page .main {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
+
+body.dsec-page .main > .screen-frame.stack {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  overflow: hidden;
+}
+
+body.dsec-page .main > .screen-frame.stack > .metric-grid,
+body.dsec-page .main > .screen-frame.stack > .filters {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+body.dsec-page .user-list-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+body.dsec-page .user-list-card > .card-title-row,
+body.dsec-page .user-list-card > .pagination {
+  flex: 0 0 auto;
+}
+
+body.dsec-page .user-list-card > .table-wrap {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+  position: relative;
+}
+
+body.dsec-page .user-list-card .table {
+  width: max-content;
+  min-width: 100%;
+}
+
+body.dsec-page .user-list-card .table.table-actions-sticky {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* 表头纵向吸顶 */
+body.dsec-page .user-list-card .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+/* 操作列右侧固定（详情｜处置 / 复核 等，预留多按钮宽度） */
+body.dsec-page .user-list-card .table.table-actions-sticky th.user-actions-col,
+body.dsec-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+body.dsec-page .user-list-card .table.table-actions-sticky th:last-child,
+body.dsec-page .user-list-card .table.table-actions-sticky td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  min-width: 220px;
+  background: #fff;
+  box-shadow: -8px 0 12px rgba(26, 28, 31, 0.05);
+}
+
+body.dsec-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+body.dsec-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  z-index: 5;
+  top: 0;
+  right: 0;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+body.dsec-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+body.dsec-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: #f7f9ff;
+}
+
+[data-theme="dark"] body.dsec-page .user-list-card .table thead th,
+[data-theme="dark"] body.dsec-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+[data-theme="dark"] body.dsec-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  background: #0a1938;
+}
+
+[data-theme="dark"] body.dsec-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+[data-theme="dark"] body.dsec-page .user-list-card .table.table-actions-sticky td:last-child {
+  background: var(--bg-card);
+  box-shadow: -8px 0 12px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] body.dsec-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+[data-theme="dark"] body.dsec-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: rgba(19, 90, 250, 0.12);
+}
+
+/* 分页横向单行 */
+body.dsec-page .pagination {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+}
+
+body.dsec-page .pagination > span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+body.dsec-page .pagination .page-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

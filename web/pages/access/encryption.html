@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文件加密监控 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/access-control.css">
+</head>
+<body class="ac-page" data-menu-key="access.encryption" data-page-section="访问控制管理" data-page-title="文件加密监控">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="acEncryptMetrics">
+          <article class="metric-card"><div class="metric-label">受监控对象</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">已加密合规</div><div class="metric-number" data-m="compliant">0</div></article>
+          <article class="metric-card"><div class="metric-label">策略异常</div><div class="metric-number" data-m="policyAbnormal">0</div></article>
+          <article class="metric-card"><div class="metric-label">待处置告警</div><div class="metric-number" data-m="alertPending">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">对象类型</span>
+              <select class="form-control" data-filter="objectType">
+                <option value="">全部</option>
+                <option value="file">文件</option>
+                <option value="dir">目录</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">加密模式</span>
+              <select class="form-control" data-filter="encryptMode"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">保护状态</span>
+              <select class="form-control" data-filter="protectStatus">
+                <option value="">全部</option>
+                <option value="encrypted">已加密</option>
+                <option value="partial">部分加密</option>
+                <option value="plaintext">明文</option>
+                <option value="unknown">未知</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">数据等级</span>
+              <select class="form-control" data-filter="dataLevel"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">业务系统</span>
+              <select class="form-control" data-filter="bizSystem"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">终端分组</span>
+              <select class="form-control" data-filter="terminalGroup"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="路径/文件名">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">加密监控对象</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="policy"><i class="fa-solid fa-sliders"></i> 配置策略</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>对象名称/路径</th><th>类型</th><th>业务系统</th><th>数据等级</th><th>加密模式</th>
+                  <th>保护状态</th><th>策略版本</th><th>客户端</th><th>最近上报</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="acEncryptBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="acEncryptPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/access-control-mock.js"></script>
+  <script>
+    const AC = window.AccessControl;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label || meta.label === "无") return `<span class="info-value">${esc(meta?.label || "-")}</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function fillSelects() {
+      const modeSel = document.querySelector("[data-filter='encryptMode']");
+      modeSel.innerHTML = '<option value="">全部</option>' + Object.entries(AC.ENCRYPT_MODE_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const levelSel = document.querySelector("[data-filter='dataLevel']");
+      levelSel.innerHTML = '<option value="">全部</option>' + AC.listDataLevels().map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      const bizSel = document.querySelector("[data-filter='bizSystem']");
+      bizSel.innerHTML = '<option value="">全部</option>' + AC.listBizSystems().map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      const groupSel = document.querySelector("[data-filter='terminalGroup']");
+      groupSel.innerHTML = '<option value="">全部</option>' + AC.listTerminalGroups().map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = AC.encryptMetrics();
+      document.querySelectorAll("#acEncryptMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("acEncryptPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = AC.listEncryptObjects({
+        objectType: f.objectType || undefined,
+        encryptMode: f.encryptMode || undefined,
+        protectStatus: f.protectStatus || undefined,
+        dataLevel: f.dataLevel || undefined,
+        bizSystem: f.bizSystem || undefined,
+        terminalGroup: f.terminalGroup || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("acEncryptBody").innerHTML = pageRows.map((row) => {
+        const protect = AC.protectTag(row.protectStatus);
+        const client = AC.clientTag(row.clientStatus);
+        return `<tr data-id="${esc(row.id)}">
+          <td><div>${dash(row.name)}</div><div style="font-size:12px;color:var(--text-secondary)">${dash(row.path)}</div></td>
+          <td>${row.objectType === "dir" ? "目录" : "文件"}</td>
+          <td>${dash(row.bizSystem)}</td>
+          <td>${dash(row.dataLevel)}</td>
+          <td>${esc(AC.encryptModeLabel(row.encryptMode))}</td>
+          <td>${tagHtml(protect)}</td>
+          <td>${dash(row.policyVersion)}</td>
+          <td>${tagHtml(client)}</td>
+          <td>${dash(row.lastReportAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            <button class="table-action" type="button" data-row="dispose" data-id="${esc(row.id)}">处置</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = AC.getEncryptObject(id);
+      if (!row) return;
+      const alerts = AC.listRecentAlerts(id, 10);
+      const alertTable = alerts.length
+        ? `<table class="ac-sub-table"><thead><tr><th>时间</th><th>告警类型</th><th>摘要</th><th>结果</th></tr></thead><tbody>${alerts.map((a) => `<tr><td>${dash(a.time)}</td><td>${esc(AC.alertTypeLabel(a.alertType))}</td><td>${dash(a.summary)}</td><td>${dash(a.result)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="ac-sub-empty">暂无告警记录</div>`;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("对象名称", dash(row.name))}
+            ${infoItem("对象路径", dash(row.path))}
+            ${infoItem("对象类型", row.objectType === "dir" ? "目录" : "文件")}
+            ${infoItem("业务系统", dash(row.bizSystem))}
+            ${infoItem("数据等级", dash(row.dataLevel))}
+            ${infoItem("终端分组", dash(row.terminalGroup))}
+            ${infoItem("加密模式", esc(AC.encryptModeLabel(row.encryptMode)))}
+            ${infoItem("保护状态", tagHtml(AC.protectTag(row.protectStatus)))}
+            ${infoItem("策略名称", dash(row.policyName))}
+            ${infoItem("策略版本", dash(row.policyVersion))}
+            ${infoItem("匹配条件", dash(row.matchRuleSummary))}
+            ${infoItem("客户端状态", tagHtml(AC.clientTag(row.clientStatus)))}
+            ${infoItem("告警类型", row.alertType ? esc(AC.alertTypeLabel(row.alertType)) : "-")}
+            ${infoItem("处置状态", tagHtml(AC.encryptHandleTag(row.handleStatus)))}
+            ${infoItem("最近上报", dash(row.lastReportAt))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>
+        <section class="detail-section ac-detail-subsection">
+          <h3 class="detail-title">最近告警</h3>
+          ${alertTable}
+        </section>`;
+      window.openAppDrawer({ title: "加密对象详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openDispose(id) {
+      const row = AC.getEncryptObject(id);
+      if (!row) return;
+      const alertOpts = Object.entries(AC.ALERT_TYPES).map(([k, v]) => `<option value="${esc(k)}" ${row.alertType === k ? "selected" : ""}>${esc(v)}</option>`).join("");
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">告警类型</span>
+          <select class="form-control" id="encAlertType">${alertOpts}</select>
+        </label>
+        <label class="form-field form-item"><span class="form-label form-required">联动动作</span>
+          <select class="form-control" id="encAction">
+            <option value="block">终端阻断</option>
+            <option value="restore">备份恢复</option>
+            <option value="ticket">发起工单</option>
+          </select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">备注</span>
+          <textarea class="form-control textarea" id="encRemark" placeholder="请输入"></textarea>
+        </label>`;
+      window.openAppDrawer({
+        title: "告警处置",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="dispose" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function openPolicy() {
+      const policies = AC.listPolicies();
+      const policyOpts = policies.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.version)})</option>`).join("");
+      const modeOpts = Object.entries(AC.ENCRYPT_MODE_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const body = `
+        <label class="form-field form-item"><span class="form-label">编辑已有策略</span>
+          <select class="form-control" id="polPick"><option value="">新建策略</option>${policyOpts}</select>
+        </label>
+        <label class="form-field form-item"><span class="form-label form-required">策略名称</span>
+          <input class="form-control" id="polName" placeholder="请输入">
+        </label>
+        <label class="form-field form-item"><span class="form-label form-required">加密模式</span>
+          <select class="form-control" id="polMode">${modeOpts}</select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">文件后缀</span>
+          <input class="form-control" id="polSuffix" placeholder="如 .docx,.xlsx,.pdf">
+        </label>
+        <label class="form-field form-item"><span class="form-label">路径匹配</span>
+          <input class="form-control" id="polPath" placeholder="如 D:\\Finance\\*">
+        </label>
+        <label class="form-field form-item"><span class="form-label">业务系统</span>
+          <input class="form-control" id="polBiz" placeholder="逗号分隔">
+        </label>
+        <label class="form-field form-item"><span class="form-label">数据等级</span>
+          <input class="form-control" id="polLevel" placeholder="逗号分隔">
+        </label>
+        <label class="form-field form-item"><span class="form-label">终端分组</span>
+          <input class="form-control" id="polGroup" placeholder="逗号分隔">
+        </label>
+        <label class="switch-line form-item"><span>启用策略</span><input type="checkbox" id="polEnabled" checked></label>`;
+      window.openAppDrawer({
+        title: "配置加密策略",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="policy">保存</button>',
+      });
+
+      const pick = document.getElementById("polPick");
+      const fillFrom = (id) => {
+        if (!id) {
+          document.getElementById("polName").value = "";
+          document.getElementById("polMode").value = "transparent";
+          document.getElementById("polSuffix").value = "";
+          document.getElementById("polPath").value = "";
+          document.getElementById("polBiz").value = "";
+          document.getElementById("polLevel").value = "";
+          document.getElementById("polGroup").value = "";
+          document.getElementById("polEnabled").checked = true;
+          return;
+        }
+        const p = AC.getPolicy(id);
+        if (!p) return;
+        document.getElementById("polName").value = p.name || "";
+        document.getElementById("polMode").value = p.encryptMode || "transparent";
+        document.getElementById("polSuffix").value = (p.suffixes || []).join(",");
+        document.getElementById("polPath").value = (p.paths || []).join(",");
+        document.getElementById("polBiz").value = (p.bizSystems || []).join(",");
+        document.getElementById("polLevel").value = (p.dataLevels || []).join(",");
+        document.getElementById("polGroup").value = (p.terminalGroups || []).join(",");
+        document.getElementById("polEnabled").checked = !!p.enabled;
+      };
+      pick.addEventListener("change", () => fillFrom(pick.value));
+    }
+
+    function splitCsv(v) {
+      return String(v || "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+    }
+
+    fillSelects();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "refresh") render();
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "policy") openPolicy();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "dispose") openDispose(rowBtn.dataset.id);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "dispose") {
+        AC.disposeEncryptAlert(submit.dataset.id, {
+          alertType: document.getElementById("encAlertType").value,
+          action: document.getElementById("encAction").value,
+          remark: document.getElementById("encRemark").value.trim(),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+      if (submit.dataset.drawerSubmit === "policy") {
+        const name = document.getElementById("polName")?.value.trim();
+        if (!name) { alert("请填写策略名称"); return; }
+        const pickId = document.getElementById("polPick").value;
+        AC.savePolicy({
+          id: pickId || undefined,
+          name,
+          encryptMode: document.getElementById("polMode").value,
+          suffixes: splitCsv(document.getElementById("polSuffix").value),
+          paths: splitCsv(document.getElementById("polPath").value),
+          bizSystems: splitCsv(document.getElementById("polBiz").value),
+          dataLevels: splitCsv(document.getElementById("polLevel").value),
+          terminalGroups: splitCsv(document.getElementById("polGroup").value),
+          fileTypes: [],
+          binaryHints: [],
+          enabled: document.getElementById("polEnabled").checked,
+        });
+        window.closeAppDrawer();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+/* 桌面安全管理模块补充样式 */
+
+.ds-audit-table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+.ds-audit-table th,
+.ds-audit-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider, #EDF1F7);
+  text-align: left;
+}
+
+.ds-audit-table th {
+  color: var(--text-secondary, #86909C);
+  font-weight: 600;
+  background: var(--primary-bg, #F2F7FF);
+}
+
+.ds-channel-summary {
+  color: var(--text-primary, #50565D);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ds-tool-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+
+.ds-tool-checkboxes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary, #50565D);
+}
+
+.ds-detail-subsection {
+  margin-top: 16px;
+}
+
+.ds-detail-subsection .detail-title {
+  margin-bottom: 8px;
+}
+
+.ds-audit-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary, #86909C);
+}
+
+/*
+ * 列表工作台：主区锁死在视口高度，仅 .table-wrap 产生滚动。
+ * 必须让 .table-wrap 成为真正的横向/纵向 scrollport，操作列 sticky 才生效。
+ */
+body.ds-page {
+  overflow: hidden;
+}
+
+body.ds-page .app-shell {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+body.ds-page .main {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
+
+body.ds-page .main > .screen-frame.stack {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px;
+  overflow: hidden;
+}
+
+body.ds-page .main > .screen-frame.stack > .metric-grid,
+body.ds-page .main > .screen-frame.stack > .filters {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+body.ds-page .user-list-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+body.ds-page .user-list-card > .card-title-row,
+body.ds-page .user-list-card > .pagination {
+  flex: 0 0 auto;
+}
+
+body.ds-page .user-list-card > .table-wrap {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+  position: relative;
+}
+
+body.ds-page .user-list-card .table {
+  width: max-content;
+  min-width: 100%;
+}
+
+body.ds-page .user-list-card .table.table-actions-sticky {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* 表头纵向吸顶 */
+body.ds-page .user-list-card .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+/* 操作列右侧固定；三按钮需要更宽 */
+body.ds-page .user-list-card .table.table-actions-sticky th.user-actions-col,
+body.ds-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+body.ds-page .user-list-card .table.table-actions-sticky th:last-child,
+body.ds-page .user-list-card .table.table-actions-sticky td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  min-width: 220px;
+  background: #fff;
+  box-shadow: -8px 0 12px rgba(26, 28, 31, 0.05);
+}
+
+body.ds-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+body.ds-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  z-index: 5;
+  top: 0;
+  right: 0;
+  background: var(--primary-bg, #f2f7ff);
+}
+
+body.ds-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+body.ds-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: #f7f9ff;
+}
+
+[data-theme="dark"] body.ds-page .user-list-card .table thead th,
+[data-theme="dark"] body.ds-page .user-list-card .table.table-actions-sticky thead th.user-actions-col,
+[data-theme="dark"] body.ds-page .user-list-card .table.table-actions-sticky thead th:last-child {
+  background: #0a1938;
+}
+
+[data-theme="dark"] body.ds-page .user-list-card .table.table-actions-sticky td.user-actions-col,
+[data-theme="dark"] body.ds-page .user-list-card .table.table-actions-sticky td:last-child {
+  background: var(--bg-card);
+  box-shadow: -8px 0 12px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] body.ds-page .user-list-card .table.table-actions-sticky tbody tr:hover td.user-actions-col,
+[data-theme="dark"] body.ds-page .user-list-card .table.table-actions-sticky tbody tr:hover td:last-child {
+  background: rgba(19, 90, 250, 0.12);
+}
+
+/* 分页横向单行 */
+body.ds-page .pagination {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+}
+
+body.ds-page .pagination > span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+body.ds-page .pagination .page-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

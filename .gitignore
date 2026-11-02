@@ -1,0 +1,23 @@
+# 文档与规范（不推送）
+docs/
+*.md
+.superpowers/
+.cursor/
+.agents/
+
+# 临时与备份
+tmp-*
+*.bak
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
+# 系统与 IDE
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+.idea/
+.vscode/

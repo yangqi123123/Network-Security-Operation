@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安全知识库 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/security-ops.css">
+</head>
+<body class="secops-page knowledge-page list-workbench" data-menu-key="secops.knowledge" data-page-section="安全运营管理" data-page-title="安全知识库">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">关键字</span><input class="form-control" data-filter="keyword" placeholder="标题/CVE/标签"></label>
+            <label class="form-field"><span class="form-label">类型</span><select class="form-control" data-filter="type"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">威胁类型</span><select class="form-control" data-filter="threatType"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">攻击阶段</span><select class="form-control" data-filter="stage"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">资产类型</span><select class="form-control" data-filter="assetType"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">状态</span><select class="form-control" data-filter="status"><option value="">全部</option><option>启用</option><option>停用</option></select></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">知识列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新建知识</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>标题</th><th>类型</th><th>标签</th><th>引用次数</th><th>更新人</th><th>更新时间</th><th>状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="kbBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="kbPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/secops-mock.js"></script>
+  <script>
+    const S = window.SecOps;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(kind, value) {
+      const t = S.tagOf(kind, value);
+      const cls = t.tagClass ? `tag ${t.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(t.label)}</span>`;
+    }
+
+    function fillSelect(sel, list) {
+      const el = document.querySelector(`[data-filter="${sel}"]`);
+      if (!el) return;
+      el.innerHTML = '<option value="">全部</option>' + list.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("kbPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = S.listKnowledge({
+        keyword: f.keyword || undefined,
+        type: f.type || undefined,
+        threatType: f.threatType || undefined,
+        stage: f.stage || undefined,
+        assetType: f.assetType || undefined,
+        status: f.status || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("kbBody").innerHTML = rows.map((row) => `<tr>
+        <td>${dash(row.title)}</td>
+        <td>${dash(row.type)}</td>
+        <td>${dash((row.tags || []).join("、"))}</td>
+        <td>${esc(row.refCount)}</td>
+        <td>${dash(row.updater)}</td>
+        <td>${dash(row.updatedAt)}</td>
+        <td>${tagHtml("knowledgeStatus", row.status)}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          <button class="table-action" type="button" data-row="edit" data-id="${esc(row.id)}">编辑</button>
+          <button class="table-action status-danger" type="button" data-row="delete" data-id="${esc(row.id)}">删除</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function tplBlock(title, text, key) {
+      return `<div class="secops-template-head"><span>${esc(title)}</span><button class="btn btn-secondary" type="button" data-copy="${esc(key)}" style="padding:2px 10px;font-size:12px">复制</button></div><div class="secops-template-block" data-tpl="${esc(key)}">${esc(text || "-")}</div>`;
+    }
+
+    function openDetail(id) {
+      const row = S.getKnowledge(id);
+      if (!row) return;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("标题", dash(row.title))}
+            ${infoItem("类型", dash(row.type))}
+            ${infoItem("威胁类型", dash(row.threatType))}
+            ${infoItem("攻击阶段", dash(row.stage))}
+            ${infoItem("资产类型", dash(row.assetType))}
+            ${infoItem("漏洞编号", dash(row.cve))}
+            ${infoItem("处置动作", dash(row.action))}
+            ${infoItem("行业场景", dash(row.industry))}
+            ${infoItem("合规条款", dash(row.compliance))}
+            ${infoItem("标签", dash((row.tags || []).join("、")))}
+            ${infoItem("引用次数", esc(row.refCount))}
+            ${infoItem("状态", tagHtml("knowledgeStatus", row.status))}
+            ${infoItem("更新人", dash(row.updater))}
+            ${infoItem("更新时间", dash(row.updatedAt))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">处置内容</h3>
+          ${tplBlock("处置建议", row.advice, "advice")}
+          ${tplBlock("排查步骤", row.steps, "steps")}
+          ${tplBlock("影响判断", row.impact, "impact")}
+          ${tplBlock("加固命令", row.hardenCmd, "hardenCmd")}
+          ${tplBlock("沟通模板", row.commTemplate, "commTemplate")}
+        </section>`;
+      window.openAppDrawer({ title: "知识详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+      window.__kbCopyMap = { advice: row.advice, steps: row.steps, impact: row.impact, hardenCmd: row.hardenCmd, commTemplate: row.commTemplate };
+    }
+
+    function opts(list, cur) {
+      return list.map((x) => `<option value="${esc(x)}" ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
+    }
+
+    function openForm(mode, id) {
+      const row = mode === "edit" ? S.getKnowledge(id) : null;
+      const m = S.meta;
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">标题</span><input class="form-control" id="kbTitle" value="${esc(row?.title || "")}"></label>
+        <label class="form-field form-item"><span class="form-label form-required">类型</span><select class="form-control" id="kbType">${opts(m.knowledgeTypes, row?.type || m.knowledgeTypes[0])}</select></label>
+        <div class="form-grid-2">
+          <label class="form-field form-item"><span class="form-label">威胁类型</span><select class="form-control" id="kbThreat">${opts(m.threatTypes, row?.threatType)}</select></label>
+          <label class="form-field form-item"><span class="form-label">攻击阶段</span><select class="form-control" id="kbStage">${opts(m.stages, row?.stage)}</select></label>
+          <label class="form-field form-item"><span class="form-label">资产类型</span><select class="form-control" id="kbAsset">${opts(m.assetTypes, row?.assetType)}</select></label>
+          <label class="form-field form-item"><span class="form-label">处置动作</span><select class="form-control" id="kbAction">${opts(m.actions, row?.action)}</select></label>
+          <label class="form-field form-item"><span class="form-label">行业场景</span><select class="form-control" id="kbIndustry">${opts(m.industries, row?.industry)}</select></label>
+          <label class="form-field form-item"><span class="form-label">合规条款</span><select class="form-control" id="kbComp">${opts(m.compliance, row?.compliance)}</select></label>
+        </div>
+        <label class="form-field form-item"><span class="form-label">漏洞编号</span><input class="form-control" id="kbCve" value="${esc(row?.cve === "-" ? "" : row?.cve || "")}" placeholder="如 CVE-xxxx"></label>
+        <label class="form-field form-item"><span class="form-label">标签</span><input class="form-control" id="kbTags" value="${esc((row?.tags || []).join(","))}" placeholder="逗号分隔"></label>
+        <label class="form-field form-item"><span class="form-label">状态</span><select class="form-control" id="kbStatus"><option ${row?.status !== "停用" ? "selected" : ""}>启用</option><option ${row?.status === "停用" ? "selected" : ""}>停用</option></select></label>
+        <label class="form-field form-item"><span class="form-label">处置建议</span><textarea class="form-control textarea" id="kbAdvice">${esc(row?.advice || "")}</textarea></label>
+        <label class="form-field form-item"><span class="form-label">排查步骤</span><textarea class="form-control textarea" id="kbSteps">${esc(row?.steps || "")}</textarea></label>
+        <label class="form-field form-item"><span class="form-label">影响判断</span><textarea class="form-control textarea" id="kbImpact">${esc(row?.impact || "")}</textarea></label>
+        <label class="form-field form-item"><span class="form-label">加固命令</span><textarea class="form-control textarea" id="kbCmd">${esc(row?.hardenCmd || "")}</textarea></label>
+        <label class="form-field form-item"><span class="form-label">沟通模板</span><textarea class="form-control textarea" id="kbComm">${esc(row?.commTemplate || "")}</textarea></label>`;
+      window.openAppDrawer({
+        title: mode === "edit" ? "编辑知识" : "新建知识",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="save" data-id="${esc(row?.id || "")}">确认</button>`,
+      });
+    }
+
+    fillSelect("type", S.meta.knowledgeTypes);
+    fillSelect("threatType", S.meta.threatTypes);
+    fillSelect("stage", S.meta.stages);
+    fillSelect("assetType", S.meta.assetTypes);
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "export") alert("已导出（Mock）");
+      if (action === "create") openForm("create");
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "detail") openDetail(id);
+        if (rowBtn.dataset.row === "edit") openForm("edit", id);
+        if (rowBtn.dataset.row === "delete") {
+          window.openAppConfirm({
+            title: "删除确认",
+            message: "确认删除该知识条目？",
+            onConfirm: () => { S.removeKnowledge(id); render(); },
+          });
+        }
+      }
+
+      const copyBtn = event.target.closest("[data-copy]");
+      if (copyBtn) {
+        const text = (window.__kbCopyMap || {})[copyBtn.dataset.copy] || "";
+        const done = () => alert("已复制");
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => { prompt("复制以下内容", text); });
+        else prompt("复制以下内容", text);
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (submit?.dataset.drawerSubmit === "save") {
+        const title = document.getElementById("kbTitle")?.value.trim();
+        if (!title) { alert("请填写标题"); return; }
+        S.saveKnowledge({
+          id: submit.dataset.id || undefined,
+          title,
+          type: document.getElementById("kbType").value,
+          threatType: document.getElementById("kbThreat").value,
+          stage: document.getElementById("kbStage").value,
+          assetType: document.getElementById("kbAsset").value,
+          action: document.getElementById("kbAction").value,
+          industry: document.getElementById("kbIndustry").value,
+          compliance: document.getElementById("kbComp").value,
+          cve: document.getElementById("kbCve").value.trim() || "-",
+          tags: document.getElementById("kbTags").value,
+          status: document.getElementById("kbStatus").value,
+          updater: "当前用户",
+          advice: document.getElementById("kbAdvice").value,
+          steps: document.getElementById("kbSteps").value,
+          impact: document.getElementById("kbImpact").value,
+          hardenCmd: document.getElementById("kbCmd").value,
+          commTemplate: document.getElementById("kbComm").value,
+        });
+        window.closeAppDrawer?.();
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      if (event.target.closest("[data-page-action='prev']") && currentPage > 1) { currentPage -= 1; render(); }
+      if (event.target.closest("[data-page-action='next']")) {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

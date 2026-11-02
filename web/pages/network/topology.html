@@ -1,0 +1,1614 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>网络拓扑 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <style>
+    /* 取消中间固定宽盒子：主区全宽铺满，拓扑可在整页缩放 */
+    .topology-page .main {
+      padding: 0 !important;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #f5f8ff;
+    }
+    .topology-page .screen-frame {
+      max-width: none !important;
+      width: 100% !important;
+      margin: 0 !important;
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .topo-shell {
+      flex: 1;
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      overflow: hidden;
+      box-shadow: none;
+    }
+    .topo-toolbar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 16px; border: none; border-bottom: 1px solid #e8eef6; border-radius: 0;
+      background: #fff; flex-shrink: 0; width: 100%; box-sizing: border-box;
+    }
+    .topo-icon-btn {
+      width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid #d7e3f2; border-radius: 8px; background: #fff; color: #3b82c4; cursor: pointer;
+      transition: background .2s, color .2s, border-color .2s;
+    }
+    .topo-icon-btn:hover { background: #e8f1ff; border-color: #93c5fd; color: #1e6fff; }
+    .topo-icon-btn.is-active { background: #e8f1ff; border-color: #1e6fff; color: #1e6fff; }
+    .topo-add-btn {
+      height: 34px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 8px; background: #1e6fff; color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
+      border: none;
+    }
+    .topo-add-btn:hover { background: #1557d6; }
+    .topo-search {
+      flex: 1; min-width: 220px; max-width: 420px; height: 34px; padding: 0 12px 0 34px;
+      border: 1px solid #d7e3f2; border-radius: 8px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m21 21-4.3-4.3M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0Z'/%3E%3C/svg%3E") 10px center / 16px no-repeat;
+      font-size: 13px; color: #0f172a; outline: none;
+    }
+    .topo-search:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(30, 111, 255, .12); }
+    .topo-stage-wrap {
+      position: relative; flex: 1; width: 100%; min-width: 0; min-height: 0; overflow: hidden;
+      background-color: #f5f8ff;
+      background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, .28) 1px, transparent 0);
+      background-size: 20px 20px;
+    }
+    .topo-viewport {
+      position: relative; width: 100%; height: 100%; min-width: 0; cursor: grab; overflow: hidden;
+    }
+    .topo-viewport.panning { cursor: grabbing; }
+    /* 无固定宽高容器：尺寸随内容包围盒动态设置 */
+    .topo-world {
+      position: absolute; left: 0; top: 0; width: auto; height: auto;
+      transform-origin: 0 0; will-change: transform;
+    }
+    .topo-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+    .topo-svg .link-hit { pointer-events: stroke; cursor: pointer; stroke: transparent; stroke-width: 14; fill: none; }
+    .topo-svg .link-line {
+      pointer-events: none; fill: none; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .topo-svg .link-line.access { stroke: #34d399; stroke-width: 1.5; }
+    .topo-svg .link-line.core { stroke: #1e6fff; stroke-width: 2; }
+    .topo-svg .link-line.fault { stroke: #ef4444; stroke-width: 2; }
+    .topo-svg .link-line.selected {
+      stroke: #f59e0b; stroke-width: 2.5;
+      filter: drop-shadow(0 0 4px rgba(245, 158, 11, .45));
+    }
+    .topo-zone {
+      position: absolute; border: 1.5px dashed #bfdbfe; border-radius: 12px;
+      background: #f8fbff; pointer-events: none;
+    }
+    .topo-zone-title {
+      position: absolute; top: -11px; left: 12px; height: 22px; padding: 0 10px;
+      display: inline-flex; align-items: center; border-radius: 999px;
+      font-size: 12px; font-weight: 600; color: #1e6fff; background: #fff;
+      border: 1px solid #bfdbfe; letter-spacing: .02em;
+      box-shadow: 0 1px 2px rgba(30, 111, 255, .08);
+    }
+    .topo-node {
+      position: absolute; width: 96px; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      cursor: pointer; user-select: none; z-index: 2;
+    }
+    .topo-node .icon-wrap {
+      position: relative; width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      background: #e6f7ee; border: 1.5px solid #86efac; color: #16a34a;
+      box-shadow: 0 2px 6px rgba(30, 111, 255, .12);
+      transition: transform .15s, box-shadow .15s, border-color .15s, background .15s, color .15s;
+    }
+    .topo-node .icon-wrap svg {
+      width: 22px; height: 22px; display: block; flex-shrink: 0;
+      stroke: currentColor; stroke-width: 1.8; fill: none;
+    }
+    .topo-node.fault .icon-wrap { background: #fdecec; border-color: #fca5a5; color: #dc2626; }
+    .topo-node.fault .fault-dot {
+      position: absolute; top: -2px; right: -2px; width: 6px; height: 6px; border-radius: 50%;
+      background: #ef4444; box-shadow: 0 0 0 2px #fff;
+      animation: topoPulse 1.2s ease-in-out infinite;
+    }
+    .topo-node .fault-badge {
+      position: absolute; top: -8px; right: -10px; min-width: 18px; height: 18px; padding: 0 4px;
+      border-radius: 999px; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700;
+      line-height: 18px; text-align: center; box-shadow: 0 0 0 2px #fff; z-index: 2;
+    }
+    .topo-node .fault-badge.is-major { background: #f97316; }
+    .topo-node .fault-badge.is-minor { background: #eab308; color: #422006; }
+    .topo-alert-box {
+      margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #fff7ed; border: 1px solid #fed7aa;
+      color: #9a3412; font-size: 12px; line-height: 1.5;
+    }
+    .topo-alert-box strong { display: block; margin-bottom: 4px; color: #c2410c; }
+    @keyframes topoPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: .55; }
+    }
+    .topo-node.selected .icon-wrap {
+      background: #e8f1ff; border: 2px solid #1e6fff; color: #1e6fff;
+      box-shadow: 0 0 0 4px rgba(30, 111, 255, .18), 0 4px 14px rgba(30, 111, 255, .22);
+    }
+    .topo-node.search-hit .icon-wrap {
+      box-shadow: 0 0 0 4px rgba(30, 111, 255, .22), 0 2px 6px rgba(30, 111, 255, .12);
+    }
+    .topo-node.dim { opacity: .28; }
+    .topo-node .label {
+      max-width: 96px; text-align: center; font-size: 12px; line-height: 1.25; color: #475569;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .topo-node.fault .label { color: #b91c1c; font-weight: 600; }
+    .topo-node.selected .label { color: #1e40af; font-weight: 600; }
+    .topo-zoom {
+      position: absolute; top: 14px; right: 14px; z-index: 20;
+      width: 44px; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
+      background: rgba(255,255,255,.94); border: 1px solid #dbe7f5; border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(15, 35, 68, .1); backdrop-filter: blur(6px);
+    }
+    .topo-zoom button {
+      width: 28px; height: 28px; border: none; border-radius: 8px; background: transparent;
+      color: #334155; cursor: pointer; font-size: 14px;
+    }
+    .topo-zoom button:hover { background: #e8f1ff; color: #1e6fff; }
+    .topo-zoom .pct { font-size: 11px; font-weight: 600; color: #1e40af; min-height: 16px; }
+    .topo-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 148px; padding: 6px;
+      background: #fff; border: 1px solid #dbe7f5; border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(15, 35, 68, .12); display: none;
+    }
+    .topo-dropdown.open { display: block; }
+    .topo-dropdown button {
+      width: 100%; height: 34px; padding: 0 10px; text-align: left; border: none; border-radius: 8px;
+      background: transparent; color: #334155; font-size: 13px; cursor: pointer;
+    }
+    .topo-dropdown button:hover { background: #e8f1ff; color: #1e6fff; }
+    .topo-panel {
+      position: absolute; top: 14px; right: 70px; z-index: 25; width: 280px;
+      background: rgba(255,255,255,.96); border: 1px solid #dbe7f5; border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(15, 35, 68, .14); backdrop-filter: blur(8px);
+      display: none; overflow: hidden;
+    }
+    .topo-panel.open { display: block; }
+    /* 右下角性能快照窗格：对齐磋商「设备快照」能力 */
+    .topo-snap-pane {
+      position: absolute; right: 14px; bottom: 14px; z-index: 24; width: 320px;
+      background: rgba(255,255,255,.97); border: 1px solid #dbe7f5; border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(15, 35, 68, .14); backdrop-filter: blur(8px);
+      overflow: hidden;
+    }
+    .topo-snap-pane.is-warn { border-color: #fdba74; box-shadow: 0 12px 32px rgba(234, 88, 12, .16); }
+    .topo-snap-pane.is-danger { border-color: #fca5a5; box-shadow: 0 12px 32px rgba(220, 38, 38, .16); }
+    .topo-snap-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 10px 12px; border-bottom: 1px solid #e8eef6;
+      background: linear-gradient(180deg, #f0f7ff, #fff);
+    }
+    .topo-snap-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: #0f172a; }
+    .topo-snap-head .sub { margin: 2px 0 0; font-size: 11px; color: #64748b; }
+    .topo-snap-body { padding: 10px 12px 12px; max-height: 260px; overflow: auto; }
+    .topo-snap-empty { padding: 18px 8px; text-align: center; font-size: 12px; color: #94a3b8; }
+    .topo-snap-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .topo-snap-metric {
+      padding: 8px 10px; border-radius: 8px; background: #f8fafc; border: 1px solid #eef2f7;
+    }
+    .topo-snap-metric span { display: block; font-size: 11px; color: #64748b; }
+    .topo-snap-metric strong { font-size: 15px; color: #0f172a; font-weight: 600; }
+    .topo-snap-metric.is-high strong { color: #c2410c; }
+    .topo-snap-list { margin: 0; padding: 0; list-style: none; font-size: 11px; color: #64748b; }
+    .topo-snap-list li {
+      display: flex; justify-content: space-between; gap: 8px;
+      padding: 4px 0; border-bottom: 1px dashed #eef2f7;
+    }
+    .topo-snap-list strong { color: #0f172a; font-weight: 500; }
+    .topo-snap-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .topo-snap-actions .btn { flex: 1; justify-content: center; height: 32px; font-size: 12px; }
+    .topo-panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border-bottom: 1px solid #e8eef6; background: linear-gradient(180deg, #f0f7ff, #fff);
+    }
+    .topo-panel-head h3 { margin: 0; font-size: 14px; color: #0f172a; font-weight: 600; }
+    .topo-panel-body { padding: 12px 14px 16px; display: grid; gap: 10px; }
+    .topo-kv { display: grid; grid-template-columns: 72px 1fr; gap: 8px; font-size: 12px; }
+    .topo-kv span { color: #64748b; }
+    .topo-kv strong { color: #0f172a; font-weight: 500; word-break: break-all; }
+    .status-pill {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+    }
+    .status-pill.ok { background: #dcfce7; color: #15803d; }
+    .status-pill.bad { background: #fee2e2; color: #b91c1c; }
+    .status-pill.sel { background: #e8f1ff; color: #1e6fff; }
+    .topo-toast {
+      position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+      padding: 8px 14px; border-radius: 8px; background: rgba(15, 23, 42, .86); color: #fff;
+      font-size: 12px; z-index: 40; opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .topo-toast.show { opacity: 1; }
+    .topo-discover {
+      position: absolute; left: 16px; top: 16px; z-index: 28; width: 320px;
+      background: rgba(255,255,255,.97); border: 1px solid #dbe7f5; border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(15, 35, 68, .14); display: none; overflow: hidden;
+    }
+    .topo-discover.open { display: block; }
+    .topo-discover-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border-bottom: 1px solid #e8eef6; background: linear-gradient(180deg, #f0f7ff, #fff);
+    }
+    .topo-discover-head h3 { margin: 0; font-size: 14px; color: #0f172a; font-weight: 600; }
+    .topo-discover-body { padding: 12px 14px 14px; }
+    .topo-discover-desc { margin: 0 0 12px; font-size: 12px; color: #64748b; line-height: 1.5; }
+    .topo-proto-list { display: grid; gap: 8px; margin: 0 0 12px; }
+    .topo-proto {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      border: 1px solid #e8eef6; border-radius: 8px; background: #f8fbff; font-size: 12px; color: #334155;
+    }
+    .topo-proto .tag {
+      min-width: 52px; height: 22px; padding: 0 8px; border-radius: 999px;
+      display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 11px;
+      background: #e2e8f0; color: #64748b;
+    }
+    .topo-proto.running .tag { background: #dbeafe; color: #1d4ed8; }
+    .topo-proto.done .tag { background: #dcfce7; color: #15803d; }
+    .topo-proto .meta { flex: 1; min-width: 0; }
+    .topo-proto .meta strong { display: block; font-weight: 600; color: #0f172a; }
+    .topo-proto .meta span { color: #64748b; }
+    .topo-discover-bar {
+      height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin-bottom: 10px;
+    }
+    .topo-discover-bar > i {
+      display: block; height: 100%; width: 0; border-radius: 999px;
+      background: linear-gradient(90deg, #60a5fa, #1e6fff); transition: width .25s ease;
+    }
+    .topo-discover-result {
+      display: none; padding: 10px; border-radius: 8px; background: #f0fdf4; border: 1px solid #bbf7d0;
+      font-size: 12px; color: #166534; line-height: 1.55;
+    }
+    .topo-discover-result.show { display: block; }
+    .topo-discover-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body class="topology-page" data-menu-key="network.topology" data-page-section="网络管理" data-page-title="网络拓扑">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame">
+        <div class="topo-shell">
+          <div class="topo-toolbar">
+            <div class="relative">
+              <button class="topo-add-btn" type="button" id="addBtn">+ 添加 <i class="fa-solid fa-chevron-down text-[10px]"></i></button>
+              <div class="topo-dropdown" id="addMenu">
+                <button type="button" data-mock-action="add-device">添加设备</button>
+                <button type="button" data-mock-action="add-link">添加链路</button>
+              </div>
+            </div>
+            <button class="topo-add-btn" type="button" id="discoverBtn" title="ICMP / SNMP / HSRP / STP">
+              <i class="fa-solid fa-satellite-dish"></i> 拓扑自动发现
+            </button>
+            <input class="topo-search" id="searchInput" type="search" placeholder="搜索设备名称/IP/MAC" autocomplete="off">
+            <button class="topo-icon-btn" type="button" title="筛选" data-mock-action="filter" id="filterBtn"><i class="fa-solid fa-filter"></i></button>
+            <button class="topo-icon-btn" type="button" title="编辑" data-mock-action="edit" id="editBtn"><i class="fa-solid fa-pen"></i></button>
+            <div class="relative">
+              <button class="topo-icon-btn" type="button" title="更多" id="moreBtn"><i class="fa-solid fa-ellipsis"></i></button>
+              <div class="topo-dropdown" id="moreMenu" style="left:auto;right:0;min-width:160px">
+                <button type="button" data-more-action="fit">适应画布</button>
+                <button type="button" data-more-action="show-all">显示全部设备</button>
+                <button type="button" data-more-action="fault-only">仅看故障设备</button>
+                <button type="button" data-more-action="export-json">导出拓扑 JSON</button>
+                <button type="button" data-more-action="delete-selected">删除选中设备</button>
+              </div>
+            </div>
+            <button class="topo-icon-btn" type="button" title="导出" data-mock-action="export"><i class="fa-solid fa-download"></i></button>
+          </div>
+
+          <div class="topo-stage-wrap" id="stageWrap">
+            <div class="topo-viewport" id="viewport">
+              <div class="topo-world" id="world">
+                <div id="zones"></div>
+                <svg class="topo-svg" id="linksSvg"></svg>
+                <div id="nodesLayer"></div>
+              </div>
+            </div>
+
+            <div class="topo-zoom" id="zoomCtrl">
+              <button type="button" id="zoomIn" title="放大"><i class="fa-solid fa-plus"></i></button>
+              <div class="pct" id="zoomPct">70%</div>
+              <button type="button" id="zoomOut" title="缩小"><i class="fa-solid fa-minus"></i></button>
+              <button type="button" id="zoomFit" title="适应画布"><i class="fa-solid fa-expand"></i></button>
+              <button type="button" id="zoomHelp" title="帮助"><i class="fa-regular fa-circle-question"></i></button>
+            </div>
+
+            <aside class="topo-panel" id="detailPanel">
+              <div class="topo-panel-head">
+                <h3 id="detailTitle">设备详情</h3>
+                <button class="topo-icon-btn" type="button" id="closePanel" style="width:28px;height:28px"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <div class="topo-panel-body" id="detailBody"></div>
+            </aside>
+
+            <aside class="topo-snap-pane" id="snapPane" aria-label="性能快照">
+              <div class="topo-snap-head">
+                <div>
+                  <h3>性能快照</h3>
+                  <p class="sub" id="snapPaneSub">选中设备后显示近一小时负载</p>
+                </div>
+                <button class="topo-icon-btn" type="button" id="toggleSnapPane" style="width:28px;height:28px" title="收起/展开"><i class="fa-solid fa-chevron-down"></i></button>
+              </div>
+              <div class="topo-snap-body" id="snapPaneBody">
+                <div class="topo-snap-empty">点击拓扑节点，同步查看近一小时性能 / 流量负载</div>
+              </div>
+            </aside>
+
+            <div class="topo-discover" id="discoverPanel">
+              <div class="topo-discover-head">
+                <h3>拓扑自动发现</h3>
+                <button class="topo-icon-btn" type="button" id="closeDiscover" style="width:28px;height:28px"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <div class="topo-discover-body">
+                <p class="topo-discover-desc">基于 ICMP、SNMP、HSRP、STP 发现二层/三层设备并生成拓扑关系。</p>
+                <div class="topo-discover-bar"><i id="discoverBar"></i></div>
+                <div class="topo-proto-list" id="protoList">
+                  <div class="topo-proto" data-proto="icmp"><span class="tag">等待</span><div class="meta"><strong>ICMP</strong><span>探测存活主机 / 网关可达性</span></div></div>
+                  <div class="topo-proto" data-proto="snmp"><span class="tag">等待</span><div class="meta"><strong>SNMP</strong><span>读取设备类型、接口与邻居信息</span></div></div>
+                  <div class="topo-proto" data-proto="hsrp"><span class="tag">等待</span><div class="meta"><strong>HSRP</strong><span>识别冗余网关与活跃路径</span></div></div>
+                  <div class="topo-proto" data-proto="stp"><span class="tag">等待</span><div class="meta"><strong>STP</strong><span>推断二层环路与转发拓扑</span></div></div>
+                </div>
+                <div class="topo-discover-result" id="discoverResult"></div>
+                <div class="topo-discover-actions">
+                  <button class="topo-icon-btn" type="button" id="stopDiscover" style="width:auto;padding:0 12px;font-size:12px">停止</button>
+                  <button class="topo-add-btn" type="button" id="startDiscover" style="height:32px">开始发现</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="topo-toast" id="toast"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const TYPE_META = {
+      terminal: { icon: "monitor", label: "终端" },
+      printer: { icon: "printer", label: "打印机" },
+      security: { icon: "shield-plus", label: "安全设备" },
+      switch: { icon: "network", label: "交换机" },
+      firewall: { icon: "shield", label: "防火墙" },
+      server: { icon: "server", label: "服务器" },
+      storage: { icon: "database", label: "磁盘阵列" },
+      gatekeeper: { icon: "lock", label: "网闸" },
+      cloud: { icon: "cloud", label: "外部网络" },
+      core: { icon: "network", label: "核心交换机" },
+    };
+
+    // Lucide 线性图标 path（内联渲染，避免 CDN createIcons 注入失败导致空白）
+    const LUCIDE_PATHS = {
+      server: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+      network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+      shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+      monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+      printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>',
+      "shield-plus": '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M9 12h6"/><path d="M12 9v6"/>',
+      database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+      lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+      "monitor-cog": '<path d="M12 17v4"/><path d="m15.2 13.9-.9-.4"/><path d="m15.2 19.1-.9.4"/><path d="m16.9 14.6-.4-.9"/><path d="m16.9 18.4-.4.9"/><path d="m19.5 13.4-.2-.9"/><path d="m19.5 19.6-.2.9"/><path d="M22 13v6"/><path d="m8.8 13.9.9-.4"/><path d="m8.8 19.1.9.4"/><path d="m7.1 14.6.4-.9"/><path d="m7.1 18.4.4.9"/><path d="m4.5 13.4.2-.9"/><path d="m4.5 19.6.2.9"/><path d="M2 13v6"/><circle cx="12" cy="16.5" r="2.5"/><rect x="2" y="3" width="20" height="10" rx="2"/>',
+    };
+
+    function resolveIcon(node) {
+      if (node.id === "maint-console") return "monitor-cog";
+      return (TYPE_META[node.type] || TYPE_META.server).icon;
+    }
+
+    // 拓扑醒目报警 Mock：角标数量 + 最新告警摘要
+    const NODE_ALERTS = {
+      "srv-cfg-1": { count: 3, level: "critical", summary: "配置应用服务进程异常退出，影响核心业务访问。" },
+      "srv-backup": { count: 2, level: "major", summary: "备份任务超时，磁盘写入延迟升高。" },
+    };
+    function getNodeAlert(node) {
+      if (!node) return null;
+      if (NODE_ALERTS[node.id]) return NODE_ALERTS[node.id];
+      if (node.status === "fault") return { count: 1, level: "major", summary: "设备监控状态异常，请关注最新告警。" };
+      return null;
+    }
+
+    function iconSvg(name) {
+      const paths = LUCIDE_PATHS[name] || LUCIDE_PATHS.server;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+    }
+
+    const zones = [
+      { id: "z-dispatch", name: "调度管理区", x: 40, y: 36, w: 520, h: 290 },
+      { id: "z-maint", name: "维护作业管理区", x: 590, y: 36, w: 280, h: 290 },
+      { id: "z-sec", name: "维护作业管理区", x: 900, y: 36, w: 760, h: 290 },
+      { id: "z-biz", name: "核心业务管理区", x: 40, y: 620, w: 400, h: 400 },
+      { id: "z-collect", name: "数据采集区", x: 480, y: 620, w: 760, h: 420 },
+    ];
+
+    const nodes = [
+      // 调度管理区终端
+      { id: "dd-x1-01", name: "调度X1台-01", type: "terminal", zone: "调度管理区", status: "normal", x: 100, y: 100, ip: "10.10.1.11", mac: "00:1A:2B:10:01:01", model: "终端-X1" },
+      { id: "dd-x1-02", name: "调度X1台-02", type: "terminal", zone: "调度管理区", status: "normal", x: 180, y: 100, ip: "10.10.1.12", mac: "00:1A:2B:10:01:02", model: "终端-X1" },
+      { id: "dd-x2-01", name: "调度X2台-01", type: "terminal", zone: "调度管理区", status: "normal", x: 260, y: 100, ip: "10.10.1.21", mac: "00:1A:2B:10:02:01", model: "终端-X2" },
+      { id: "dd-x2-02", name: "调度X2台-02", type: "terminal", zone: "调度管理区", status: "normal", x: 340, y: 100, ip: "10.10.1.22", mac: "00:1A:2B:10:02:02", model: "终端-X2" },
+      { id: "dd-x3-01", name: "调度X3台-01", type: "terminal", zone: "调度管理区", status: "normal", x: 420, y: 100, ip: "10.10.1.31", mac: "00:1A:2B:10:03:01", model: "终端-X3" },
+      { id: "dd-x3-02", name: "调度X3台-02", type: "terminal", zone: "调度管理区", status: "normal", x: 500, y: 100, ip: "10.10.1.32", mac: "00:1A:2B:10:03:02", model: "终端-X3" },
+      { id: "sw-dd-1", name: "调度接入交换机-1", type: "switch", zone: "调度管理区", status: "normal", x: 220, y: 230, ip: "10.10.1.2", mac: "00:1A:2B:AA:01:01", model: "H3C S5130" },
+      { id: "sw-dd-2", name: "调度接入交换机-2", type: "switch", zone: "调度管理区", status: "normal", x: 380, y: 230, ip: "10.10.1.3", mac: "00:1A:2B:AA:01:02", model: "H3C S5130" },
+
+      // 维护作业管理区（小）
+      { id: "printer-1", name: "打印机", type: "printer", zone: "维护作业管理区", status: "normal", x: 650, y: 100, ip: "10.10.2.21", mac: "00:1A:2B:20:01:01", model: "HP LaserJet" },
+      { id: "maint-console", name: "维护台", type: "terminal", zone: "维护作业管理区", status: "normal", x: 760, y: 100, ip: "10.10.2.22", mac: "00:1A:2B:20:01:02", model: "维护终端" },
+      { id: "sw-maint", name: "维护接入交换机", type: "switch", zone: "维护作业管理区", status: "normal", x: 705, y: 230, ip: "10.10.2.2", mac: "00:1A:2B:AA:02:01", model: "H3C S5130" },
+
+      // 维护作业管理区（安全）
+      { id: "sec-bastion", name: "360堡垒机", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 960, y: 95, ip: "10.10.3.11", mac: "00:1A:2B:30:01:01", model: "360堡垒机" },
+      { id: "sec-threat", name: "高级威胁检测", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1040, y: 95, ip: "10.10.3.12", mac: "00:1A:2B:30:01:02", model: "APT" },
+      { id: "sec-log", name: "日志审计", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1120, y: 95, ip: "10.10.3.13", mac: "00:1A:2B:30:01:03", model: "LogAudit" },
+      { id: "sec-dbaudit", name: "数据库审计", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1200, y: 95, ip: "10.10.3.14", mac: "00:1A:2B:30:01:04", model: "DBAudit" },
+      { id: "sec-ids", name: "入侵检测", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1280, y: 95, ip: "10.10.3.15", mac: "00:1A:2B:30:01:05", model: "IDS" },
+      { id: "sec-av", name: "防病毒", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1360, y: 95, ip: "10.10.3.16", mac: "00:1A:2B:30:01:06", model: "AV" },
+      { id: "sec-nac", name: "终端准入", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1440, y: 95, ip: "10.10.3.17", mac: "00:1A:2B:30:01:07", model: "NAC" },
+      { id: "sec-sa", name: "态势感知", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1520, y: 95, ip: "10.10.3.18", mac: "00:1A:2B:30:01:08", model: "SA" },
+      { id: "sec-vuln", name: "漏洞扫描", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1600, y: 95, ip: "10.10.3.19", mac: "00:1A:2B:30:01:09", model: "Scanner" },
+      { id: "sw-mgmt", name: "管理接入交换机", type: "switch", zone: "维护作业管理区(安全)", status: "normal", x: 1280, y: 230, ip: "10.10.3.2", mac: "00:1A:2B:AA:03:01", model: "H3C S5560" },
+
+      // 防火墙 A 层
+      { id: "fw-a01", name: "防火墙-A01", type: "firewall", zone: "边界防护", status: "normal", x: 220, y: 390, ip: "10.10.10.11", mac: "00:1A:2B:FW:A0:01", model: "华为 USG6000" },
+      { id: "fw-a02", name: "防火墙-A02", type: "firewall", zone: "边界防护", status: "normal", x: 380, y: 390, ip: "10.10.10.12", mac: "00:1A:2B:FW:A0:02", model: "华为 USG6000" },
+      { id: "fw-a03", name: "防火墙-A03", type: "firewall", zone: "边界防护", status: "normal", x: 705, y: 390, ip: "10.10.10.13", mac: "00:1A:2B:FW:A0:03", model: "华为 USG6000" },
+      { id: "fw-a04", name: "防火墙-A04", type: "firewall", zone: "边界防护", status: "normal", x: 1280, y: 390, ip: "10.10.10.14", mac: "00:1A:2B:FW:A0:04", model: "华为 USG6000" },
+
+      // 核心层
+      { id: "core-1", name: "核心交换机-华为", type: "core", zone: "核心层", status: "normal", x: 780, y: 520, ip: "10.10.0.1", mac: "00:1A:2B:CE:00:01", model: "华为 CE16800" },
+      { id: "core-2", name: "核心交换机-华为", type: "core", zone: "核心层", status: "normal", x: 980, y: 520, ip: "10.10.0.2", mac: "00:1A:2B:CE:00:02", model: "华为 CE16800" },
+
+      // 核心业务管理区
+      { id: "srv-cfg-1", name: "服务器-配置应用-1", type: "server", zone: "核心业务管理区", status: "fault", x: 110, y: 690, ip: "10.20.1.11", mac: "00:1A:2B:40:01:01", model: "Dell R740" },
+      { id: "srv-cfg-2", name: "服务器-配置应用-2", type: "server", zone: "核心业务管理区", status: "normal", x: 210, y: 690, ip: "10.20.1.12", mac: "00:1A:2B:40:01:02", model: "Dell R740" },
+      { id: "srv-his-1", name: "历史数据-1", type: "server", zone: "核心业务管理区", status: "normal", x: 310, y: 690, ip: "10.20.1.21", mac: "00:1A:2B:40:02:01", model: "Dell R740" },
+      { id: "srv-his-2", name: "历史数据-2", type: "server", zone: "核心业务管理区", status: "normal", x: 390, y: 690, ip: "10.20.1.22", mac: "00:1A:2B:40:02:02", model: "Dell R740" },
+      { id: "sw-b01a", name: "接入交换机-B01", type: "switch", zone: "核心业务管理区", status: "normal", x: 170, y: 820, ip: "10.20.1.2", mac: "00:1A:2B:AA:B0:01", model: "H3C S5130" },
+      { id: "sw-b01b", name: "接入交换机-B01", type: "switch", zone: "核心业务管理区", status: "normal", x: 310, y: 820, ip: "10.20.1.3", mac: "00:1A:2B:AA:B0:02", model: "H3C S5130" },
+      { id: "disk-01", name: "磁盘阵列-01", type: "storage", zone: "核心业务管理区", status: "normal", x: 170, y: 950, ip: "10.20.1.31", mac: "00:1A:2B:ST:00:01", model: "Huawei OceanStor" },
+      { id: "disk-02", name: "磁盘阵列-02", type: "storage", zone: "核心业务管理区", status: "normal", x: 310, y: 950, ip: "10.20.1.32", mac: "00:1A:2B:ST:00:02", model: "Huawei OceanStor" },
+
+      // 数据采集区服务器
+      { id: "srv-fe-1", name: "前置通信-1", type: "server", zone: "数据采集区", status: "normal", x: 530, y: 690, ip: "10.30.1.11", mac: "00:1A:2B:50:01:01", model: "Dell R640" },
+      { id: "srv-fe-2", name: "前置通信-2", type: "server", zone: "数据采集区", status: "normal", x: 610, y: 690, ip: "10.30.1.12", mac: "00:1A:2B:50:01:02", model: "Dell R640" },
+      { id: "srv-fe-3", name: "前置通信-3", type: "server", zone: "数据采集区", status: "normal", x: 690, y: 690, ip: "10.30.1.13", mac: "00:1A:2B:50:01:03", model: "Dell R640" },
+      { id: "srv-fe-4", name: "前置通信-4", type: "server", zone: "数据采集区", status: "normal", x: 770, y: 690, ip: "10.30.1.14", mac: "00:1A:2B:50:01:04", model: "Dell R640" },
+      { id: "srv-backup", name: "服务器-备份", type: "server", zone: "数据采集区", status: "fault", x: 850, y: 690, ip: "10.30.1.21", mac: "00:1A:2B:50:02:01", model: "Dell R740" },
+      { id: "srv-maint", name: "服务器-维护", type: "server", zone: "数据采集区", status: "normal", x: 930, y: 690, ip: "10.30.1.22", mac: "00:1A:2B:50:02:02", model: "Dell R640" },
+      { id: "srv-fwd", name: "服务器-转发", type: "server", zone: "数据采集区", status: "normal", x: 1010, y: 690, ip: "10.30.1.23", mac: "00:1A:2B:50:02:03", model: "Dell R640" },
+      { id: "srv-av", name: "服务器-防病毒", type: "server", zone: "数据采集区", status: "normal", x: 1090, y: 690, ip: "10.30.1.24", mac: "00:1A:2B:50:02:04", model: "Dell R640" },
+      { id: "srv-if", name: "服务器-接口", type: "server", zone: "数据采集区", status: "normal", x: 1170, y: 690, ip: "10.30.1.25", mac: "00:1A:2B:50:02:05", model: "Dell R640" },
+      { id: "srv-ntp", name: "NTP时钟", type: "server", zone: "数据采集区", status: "normal", x: 1250, y: 690, ip: "10.30.1.26", mac: "00:1A:2B:50:02:06", model: "NTP Server" },
+
+      { id: "sw-dc-1", name: "数据采集交换机-1", type: "switch", zone: "数据采集区", status: "normal", x: 620, y: 820, ip: "10.30.1.2", mac: "00:1A:2B:AA:D0:01", model: "H3C S5130" },
+      { id: "sw-dc-2", name: "数据采集交换机-2", type: "switch", zone: "数据采集区", status: "normal", x: 740, y: 820, ip: "10.30.1.3", mac: "00:1A:2B:AA:D0:02", model: "H3C S5130" },
+      { id: "sw-tx-1", name: "传输采集交换机-1", type: "switch", zone: "数据采集区", status: "normal", x: 900, y: 820, ip: "10.30.1.4", mac: "00:1A:2B:AA:D0:03", model: "H3C S5130" },
+      { id: "sw-tx-2", name: "传输采集交换机-2", type: "switch", zone: "数据采集区", status: "normal", x: 1020, y: 820, ip: "10.30.1.5", mac: "00:1A:2B:AA:D0:04", model: "H3C S5130" },
+
+      // 防火墙 B / 网闸 / 云
+      { id: "fw-b01", name: "防火墙-B01", type: "firewall", zone: "数据采集区", status: "normal", x: 680, y: 960, ip: "10.30.10.11", mac: "00:1A:2B:FW:B0:01", model: "华为 USG6000" },
+      { id: "fw-b02", name: "防火墙-B02", type: "firewall", zone: "数据采集区", status: "normal", x: 960, y: 960, ip: "10.30.10.12", mac: "00:1A:2B:FW:B0:02", model: "华为 USG6000" },
+      { id: "fw-b03", name: "防火墙-B03", type: "firewall", zone: "转发通道", status: "normal", x: 1400, y: 820, ip: "10.30.10.13", mac: "00:1A:2B:FW:B0:03", model: "华为 USG6000" },
+      { id: "fw-b04", name: "防火墙-B04", type: "firewall", zone: "接口通道", status: "normal", x: 1580, y: 820, ip: "10.30.10.14", mac: "00:1A:2B:FW:B0:04", model: "华为 USG6000" },
+      { id: "gk-fwd", name: "网闸-转发", type: "gatekeeper", zone: "转发通道", status: "normal", x: 1400, y: 960, ip: "10.30.20.11", mac: "00:1A:2B:GK:00:01", model: "网闸-FW" },
+      { id: "gk-if", name: "网闸-接口", type: "gatekeeper", zone: "接口通道", status: "normal", x: 1580, y: 960, ip: "10.30.20.12", mac: "00:1A:2B:GK:00:02", model: "网闸-IF" },
+      { id: "cloud-comm", name: "通信数据网", type: "cloud", zone: "外部出口", status: "normal", x: 680, y: 1120, ip: "-", mac: "-", model: "外部网络" },
+      { id: "cloud-tx", name: "传输网", type: "cloud", zone: "外部出口", status: "normal", x: 960, y: 1120, ip: "-", mac: "-", model: "外部网络" },
+    ];
+
+    const links = [
+      // 调度终端 → 接入交换机（双上联）
+      { source: "dd-x1-01", target: "sw-dd-1", status: "normal" },
+      { source: "dd-x1-02", target: "sw-dd-1", status: "normal" },
+      { source: "dd-x2-01", target: "sw-dd-1", status: "normal" },
+      { source: "dd-x2-02", target: "sw-dd-2", status: "normal" },
+      { source: "dd-x3-01", target: "sw-dd-2", status: "normal" },
+      { source: "dd-x3-02", target: "sw-dd-2", status: "normal" },
+      { source: "dd-x1-01", target: "sw-dd-2", status: "normal" },
+      { source: "dd-x3-02", target: "sw-dd-1", status: "normal" },
+      { source: "sw-dd-1", target: "fw-a01", status: "normal" },
+      { source: "sw-dd-2", target: "fw-a02", status: "normal" },
+      { source: "sw-dd-1", target: "fw-a02", status: "normal" },
+      { source: "sw-dd-2", target: "fw-a01", status: "normal" },
+
+      // 维护区
+      { source: "printer-1", target: "sw-maint", status: "normal" },
+      { source: "maint-console", target: "sw-maint", status: "normal" },
+      { source: "sw-maint", target: "fw-a03", status: "normal" },
+
+      // 安全管理区
+      { source: "sec-bastion", target: "sw-mgmt", status: "normal" },
+      { source: "sec-threat", target: "sw-mgmt", status: "normal" },
+      { source: "sec-log", target: "sw-mgmt", status: "normal" },
+      { source: "sec-dbaudit", target: "sw-mgmt", status: "normal" },
+      { source: "sec-ids", target: "sw-mgmt", status: "normal" },
+      { source: "sec-av", target: "sw-mgmt", status: "normal" },
+      { source: "sec-nac", target: "sw-mgmt", status: "normal" },
+      { source: "sec-sa", target: "sw-mgmt", status: "normal" },
+      { source: "sec-vuln", target: "sw-mgmt", status: "normal" },
+      { source: "sw-mgmt", target: "fw-a04", status: "normal" },
+
+      // A 防火墙 → 核心
+      { source: "fw-a01", target: "core-1", status: "normal" },
+      { source: "fw-a01", target: "core-2", status: "normal" },
+      { source: "fw-a02", target: "core-1", status: "normal" },
+      { source: "fw-a02", target: "core-2", status: "normal" },
+      { source: "fw-a03", target: "core-1", status: "normal" },
+      { source: "fw-a03", target: "core-2", status: "normal" },
+      { source: "fw-a04", target: "core-1", status: "normal" },
+      { source: "fw-a04", target: "core-2", status: "normal" },
+      { source: "core-1", target: "core-2", status: "normal" },
+
+      // 核心业务
+      { source: "srv-cfg-1", target: "sw-b01a", status: "fault" },
+      { source: "srv-cfg-2", target: "sw-b01a", status: "normal" },
+      { source: "srv-his-1", target: "sw-b01b", status: "normal" },
+      { source: "srv-his-2", target: "sw-b01b", status: "normal" },
+      { source: "sw-b01a", target: "disk-01", status: "normal" },
+      { source: "sw-b01b", target: "disk-02", status: "normal" },
+      { source: "sw-b01a", target: "core-1", status: "normal" },
+      { source: "sw-b01b", target: "core-2", status: "normal" },
+
+      // 数据采集区
+      { source: "srv-fe-1", target: "sw-dc-1", status: "normal" },
+      { source: "srv-fe-2", target: "sw-dc-1", status: "normal" },
+      { source: "srv-fe-3", target: "sw-dc-2", status: "normal" },
+      { source: "srv-fe-4", target: "sw-dc-2", status: "normal" },
+      { source: "srv-backup", target: "sw-tx-1", status: "fault" },
+      { source: "srv-maint", target: "sw-tx-1", status: "normal" },
+      { source: "srv-fwd", target: "sw-tx-2", status: "normal" },
+      { source: "srv-av", target: "sw-tx-2", status: "normal" },
+      { source: "srv-if", target: "sw-tx-2", status: "normal" },
+      { source: "srv-ntp", target: "sw-tx-2", status: "normal" },
+      { source: "sw-dc-1", target: "fw-b01", status: "normal" },
+      { source: "sw-dc-2", target: "fw-b01", status: "normal" },
+      { source: "sw-tx-1", target: "fw-b02", status: "normal" },
+      { source: "sw-tx-2", target: "fw-b02", status: "normal" },
+      { source: "fw-b01", target: "core-1", status: "normal" },
+      { source: "fw-b02", target: "core-2", status: "normal" },
+      { source: "fw-b01", target: "cloud-comm", status: "normal" },
+      { source: "fw-b02", target: "cloud-tx", status: "normal" },
+
+      // 转发 / 接口通道
+      { source: "srv-fwd", target: "fw-b03", status: "normal" },
+      { source: "fw-b03", target: "gk-fwd", status: "normal" },
+      { source: "fw-b03", target: "core-1", status: "normal" },
+      { source: "srv-if", target: "fw-b04", status: "normal" },
+      { source: "fw-b04", target: "gk-if", status: "normal" },
+      { source: "fw-b04", target: "core-2", status: "normal" },
+    ];
+
+    const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
+    const state = {
+      scale: 1,
+      tx: 0,
+      ty: 0,
+      selectedNodeId: "fw-a03",
+      selectedLinkIndex: links.findIndex((l) => l.source === "sw-maint" && l.target === "fw-a03"),
+      searchHits: new Set(),
+      filters: { type: "", zone: "", status: "" },
+      panning: false,
+      panStart: null,
+    };
+
+    const els = {
+      world: document.getElementById("world"),
+      viewport: document.getElementById("viewport"),
+      zones: document.getElementById("zones"),
+      nodesLayer: document.getElementById("nodesLayer"),
+      linksSvg: document.getElementById("linksSvg"),
+      zoomPct: document.getElementById("zoomPct"),
+      detailPanel: document.getElementById("detailPanel"),
+      detailTitle: document.getElementById("detailTitle"),
+      detailBody: document.getElementById("detailBody"),
+      snapPane: document.getElementById("snapPane"),
+      snapPaneBody: document.getElementById("snapPaneBody"),
+      snapPaneSub: document.getElementById("snapPaneSub"),
+      searchInput: document.getElementById("searchInput"),
+      addBtn: document.getElementById("addBtn"),
+      addMenu: document.getElementById("addMenu"),
+      moreBtn: document.getElementById("moreBtn"),
+      moreMenu: document.getElementById("moreMenu"),
+      filterBtn: document.getElementById("filterBtn"),
+      toast: document.getElementById("toast"),
+    };
+
+    function toast(msg) {
+      els.toast.textContent = msg;
+      els.toast.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => els.toast.classList.remove("show"), 1800);
+    }
+
+    function statusText(status) {
+      if (status === "fault") return "故障";
+      if (status === "selected") return "选中";
+      return "正常";
+    }
+
+    function applyTransform() {
+      els.world.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+      els.zoomPct.textContent = `${Math.round(state.scale * 100)}%`;
+    }
+
+    function setScale(next, cx, cy) {
+      const viewport = els.viewport.getBoundingClientRect();
+      const pivotX = cx ?? viewport.width / 2;
+      const pivotY = cy ?? viewport.height / 2;
+      const worldX = (pivotX - state.tx) / state.scale;
+      const worldY = (pivotY - state.ty) / state.scale;
+      state.scale = Math.min(1.8, Math.max(0.45, next));
+      state.tx = pivotX - worldX * state.scale;
+      state.ty = pivotY - worldY * state.scale;
+      applyTransform();
+    }
+
+    function renderZones() {
+      els.zones.innerHTML = zones.map((z) => `
+        <div class="topo-zone" style="left:${z.x}px;top:${z.y}px;width:${z.w}px;height:${z.h}px">
+          <div class="topo-zone-title">${z.name}</div>
+        </div>
+      `).join("");
+    }
+
+    function linkVisualStatus(link, index) {
+      if (index === state.selectedLinkIndex) return "selected";
+      if (state.selectedNodeId && (link.source === state.selectedNodeId || link.target === state.selectedNodeId)) return "selected";
+      if (link.status === "fault") return "fault";
+      const a = nodeMap[link.source];
+      const b = nodeMap[link.target];
+      const types = [a?.type, b?.type];
+      if (types.includes("core") || (types.includes("firewall") && types.includes("core"))) return "core";
+      if (types.includes("firewall") && types.includes("firewall")) return "core";
+      if (a?.type === "core" || b?.type === "core") return "core";
+      if ((a?.type === "firewall" && b?.type === "core") || (b?.type === "firewall" && a?.type === "core")) return "core";
+      return "access";
+    }
+
+    function orthoPath(x1, y1, x2, y2, radius = 4) {
+      if (Math.abs(x1 - x2) < 0.5) return `M ${x1} ${y1} L ${x2} ${y2}`;
+      if (Math.abs(y1 - y2) < 0.5) return `M ${x1} ${y1} L ${x2} ${y2}`;
+      const midY = (y1 + y2) / 2;
+      const sy1 = Math.sign(midY - y1) || 1;
+      const sx = Math.sign(x2 - x1) || 1;
+      const sy2 = Math.sign(y2 - midY) || 1;
+      const r1 = Math.min(radius, Math.abs(midY - y1) / 2, Math.abs(x2 - x1) / 2);
+      const r2 = Math.min(radius, Math.abs(y2 - midY) / 2, Math.abs(x2 - x1) / 2);
+      return [
+        `M ${x1} ${y1}`,
+        `L ${x1} ${midY - sy1 * r1}`,
+        `Q ${x1} ${midY} ${x1 + sx * r1} ${midY}`,
+        `L ${x2 - sx * r2} ${midY}`,
+        `Q ${x2} ${midY} ${x2} ${midY + sy2 * r2}`,
+        `L ${x2} ${y2}`,
+      ].join(" ");
+    }
+
+    function renderLinks() {
+      const parts = [];
+      links.forEach((link, index) => {
+        const a = nodeMap[link.source];
+        const b = nodeMap[link.target];
+        if (!a || !b) return;
+        const cls = linkVisualStatus(link, index);
+        const color = cls === "fault" ? "#ef4444" : cls === "selected" ? "#f59e0b" : cls === "core" ? "#1e6fff" : "#34d399";
+        const d = orthoPath(a.x, a.y, b.x, b.y, 4);
+        parts.push(`<path class="link-hit" data-link-index="${index}" d="${d}"></path>`);
+        parts.push(`<path class="link-line ${cls}" data-link-line="${index}" d="${d}"></path>`);
+        parts.push(`<circle cx="${a.x}" cy="${a.y}" r="3" fill="${color}" opacity=".95"></circle>`);
+        parts.push(`<circle cx="${b.x}" cy="${b.y}" r="3" fill="${color}" opacity=".95"></circle>`);
+      });
+      els.linksSvg.innerHTML = parts.join("");
+      els.linksSvg.querySelectorAll(".link-hit").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectLink(Number(el.dataset.linkIndex));
+        });
+      });
+    }
+
+    function renderNodes() {
+      els.nodesLayer.innerHTML = nodes.map((node) => {
+        const selected = node.id === state.selectedNodeId;
+        const fault = node.status === "fault";
+        const hit = state.searchHits.has(node.id);
+        const dim = state.searchHits.size > 0 && !hit && !selected;
+        const icon = resolveIcon(node);
+        const alert = getNodeAlert(node);
+        const badgeCls = alert?.level === "critical" ? "" : alert?.level === "minor" ? "is-minor" : "is-major";
+        const tip = alert ? `${node.name}｜告警 ${alert.count}｜${alert.summary}` : node.name;
+        return `
+          <div class="topo-node ${fault || alert ? "fault" : ""} ${selected ? "selected" : ""} ${hit ? "search-hit" : ""} ${dim ? "dim" : ""}"
+               data-node-id="${node.id}" style="left:${node.x}px;top:${node.y}px" title="${tip}">
+            <div class="icon-wrap">
+              ${iconSvg(icon)}
+              ${alert ? `<span class="fault-badge ${badgeCls}" aria-label="告警${alert.count}">${alert.count}</span>` : (fault ? '<span class="fault-dot" aria-hidden="true"></span>' : "")}
+            </div>
+            <div class="label" title="${node.name}">${node.name}</div>
+          </div>
+        `;
+      }).join("");
+      els.nodesLayer.querySelectorAll(".topo-node").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectNode(el.dataset.nodeId);
+        });
+        el.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          openFaultDisplay(el.dataset.nodeId);
+        });
+      });
+    }
+
+    function openFaultDisplay(nodeId) {
+      const node = nodeMap[nodeId];
+      const meta = TYPE_META[node?.type] || TYPE_META.server;
+      const alert = typeof getNodeAlert === "function" ? getNodeAlert(node) : null;
+      const params = new URLSearchParams({
+        id: nodeId,
+        name: node?.name || nodeId,
+        ip: node?.ip || "-",
+        mac: node?.mac || "-",
+        model: node?.model || "-",
+        type: node ? `${meta.label} ${node.model || ""}`.trim() : nodeId,
+        zone: node?.zone || "",
+        region: node?.zone || "",
+        layer: node?.layer || "",
+        probe: node?.probe || "",
+        online: node?.status === "fault" ? "0" : "1",
+        alarms: String(alert?.count || (node?.status === "fault" ? 3 : 0)),
+      });
+      // 拓扑节点进入设备详情二级页；故障总览仍走「故障显示」菜单
+      location.href = `./device-detail.html?${params.toString()}`;
+    }
+
+    function makeLocalHourly(seed, fault) {
+      const rows = [];
+      const now = Date.now();
+      for (let i = 11; i >= 0; i -= 1) {
+        const d = new Date(now - i * 5 * 60 * 1000);
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const base = fault ? 78 : 35;
+        const wave = Math.sin((seed + i) * 0.4) * 10;
+        rows.push({
+          time: `${hh}:${mm}`,
+          cpu: Number(Math.min(98, Math.max(8, base + wave + ((seed + i) % 7))).toFixed(1)),
+          traffic: Number(Math.max(2, 40 + seed + wave * 1.5).toFixed(1)),
+        });
+      }
+      return rows;
+    }
+
+    function resolveSnapDevice(node) {
+      const DM = window.DeviceMgmt;
+      if (!DM || !node) return null;
+      const byIp = DM.listDevices().find((d) => d.ip && node.ip && d.ip === node.ip);
+      if (byIp) return DM.getDeviceSnapshot(byIp.id);
+      const typeMap = {
+        switch: "switch_l3",
+        core: "switch_l3",
+        server: "server_linux",
+        firewall: "firewall",
+        gatekeeper: "gatekeeper",
+        storage: "storage",
+      };
+      const cat = typeMap[node.type];
+      const byCat = cat ? DM.listDevices().find((d) => d.category === cat || String(d.category).includes("switch") && node.type === "switch") : null;
+      return byCat ? DM.getDeviceSnapshot(byCat.id) : null;
+    }
+
+    function renderSnapPane(node) {
+      if (!els.snapPaneBody) return;
+      els.snapPane.classList.remove("is-warn", "is-danger");
+      if (!node) {
+        els.snapPaneSub.textContent = "选中设备后显示近一小时负载";
+        els.snapPaneBody.innerHTML = `<div class="topo-snap-empty">点击拓扑节点，同步查看近一小时性能 / 流量负载</div>`;
+        return;
+      }
+      const snap = resolveSnapDevice(node);
+      const seed = node.ip.split(".").reduce((s, n) => s + Number(n || 0), 0) || node.name.length;
+      const hourly = (snap?.hourlyLoad || makeLocalHourly(seed, node.status === "fault")).slice(-8);
+      const metrics = snap?.metrics?.length
+        ? snap.metrics.slice(0, 4)
+        : [
+            { name: "CPU", value: node.status === "fault" ? 92 : 41, unit: "%" },
+            { name: "流量", value: node.status === "fault" ? 860 : 120, unit: "Mbps" },
+          ];
+      const high = metrics.some((m) => Number(m.value) >= 85) || node.status === "fault";
+      const warn = !high && metrics.some((m) => Number(m.value) >= 70);
+      if (high) els.snapPane.classList.add("is-danger");
+      else if (warn) els.snapPane.classList.add("is-warn");
+      els.snapPaneSub.textContent = `${node.name} · ${node.ip || "-"}`;
+      const snapId = snap?.device?.id || "";
+      const snapHref = snapId
+        ? `../device/snapshot.html?id=${encodeURIComponent(snapId)}`
+        : `../device/snapshot.html`;
+      els.snapPaneBody.innerHTML = `
+        <div class="topo-snap-metrics">
+          ${metrics.map((m) => `
+            <div class="topo-snap-metric${Number(m.value) >= 70 ? " is-high" : ""}">
+              <span>${m.name}</span><strong>${m.value}${m.unit || ""}</strong>
+            </div>`).join("")}
+        </div>
+        <div style="font-size:12px;font-weight:600;color:#0f172a;margin-bottom:6px">近一小时负载</div>
+        <ul class="topo-snap-list">${hourly.map((h) =>
+          `<li><span>${h.time}</span><strong>CPU ${h.cpu ?? "-"}% · 流量 ${h.traffic ?? "-"}</strong></li>`).join("")}</ul>
+        <div class="topo-snap-actions">
+          <a class="btn btn-primary" href="${snapHref}">打开设备快照</a>
+        </div>
+        ${high || warn ? `<p style="margin:8px 0 0;font-size:11px;color:${high ? "#b91c1c" : "#c2410c"}">拓扑颜色已标示异常，右侧为近一小时性能快照供对照。</p>` : ""}
+      `;
+    }
+
+    function showNodeDetail(node) {
+      const meta = TYPE_META[node.type] || TYPE_META.server;
+      const isSelected = node.id === state.selectedNodeId;
+      const alert = getNodeAlert(node);
+      const pillClass = node.status === "fault" || alert ? "bad" : isSelected ? "sel" : "ok";
+      const pillText = node.status === "fault" || alert ? "故障" : isSelected ? "选中" : "正常";
+      const alertHtml = alert
+        ? `<div class="topo-alert-box"><strong>最新监控告警（${alert.count}）</strong>${alert.summary}</div>`
+        : `<div class="topo-kv"><span>最新告警</span><strong>暂无</strong></div>`;
+      els.detailTitle.textContent = node.name;
+      els.detailBody.innerHTML = `
+        <div class="topo-kv"><span>名称</span><strong>${node.name}</strong></div>
+        <div class="topo-kv"><span>类型</span><strong>${meta.label}</strong></div>
+        <div class="topo-kv"><span>IP</span><strong>${node.ip}</strong></div>
+        <div class="topo-kv"><span>MAC</span><strong>${node.mac}</strong></div>
+        <div class="topo-kv"><span>型号</span><strong>${node.model}</strong></div>
+        <div class="topo-kv"><span>状态</span><strong><span class="status-pill ${pillClass}">${pillText}</span></strong></div>
+        <div class="topo-kv"><span>所属区域</span><strong>${node.zone}</strong></div>
+        ${alertHtml}
+        <div style="margin-top:14px">
+          <button class="btn btn-primary" type="button" data-open-fault="${node.id}" style="width:100%">查看设备详情</button>
+          <p style="margin:8px 0 0;font-size:12px;color:var(--text-secondary)">也可双击节点进入设备详情；右下角为性能快照窗格</p>
+        </div>
+      `;
+      els.detailPanel.classList.add("open");
+      els.detailBody.querySelector("[data-open-fault]")?.addEventListener("click", () => openFaultDisplay(node.id));
+      renderSnapPane(node);
+    }
+
+    function showLinkDetail(link, index) {
+      const a = nodeMap[link.source];
+      const b = nodeMap[link.target];
+      const visual = linkVisualStatus(link, index);
+      const pillClass = visual === "fault" ? "bad" : visual === "selected" ? "sel" : "ok";
+      const detailId = link.status === "fault" || visual === "fault" ? "L001" : "L002";
+      els.detailTitle.textContent = "链路详情";
+      els.detailBody.innerHTML = `
+        <div class="topo-kv"><span>名称</span><strong>${a.name} ↔ ${b.name}</strong></div>
+        <div class="topo-kv"><span>类型</span><strong>网络链路</strong></div>
+        <div class="topo-kv"><span>源设备</span><strong>${a.name} (${a.ip})</strong></div>
+        <div class="topo-kv"><span>目标设备</span><strong>${b.name} (${b.ip})</strong></div>
+        <div class="topo-kv"><span>状态</span><strong><span class="status-pill ${pillClass}">${statusText(visual === "selected" ? "selected" : link.status)}</span></strong></div>
+        <div class="topo-kv"><span>所属区域</span><strong>${a.zone} / ${b.zone}</strong></div>
+        <div style="margin-top:14px">
+          <a class="btn btn-primary" href="./link-detail.html?id=${detailId}">查看完整详情</a>
+        </div>
+      `;
+      els.detailPanel.classList.add("open");
+    }
+
+    function selectNode(id, { openPanel = true } = {}) {
+      state.selectedNodeId = id;
+      state.selectedLinkIndex = -1;
+      renderLinks();
+      renderNodes();
+      if (openPanel) {
+        showNodeDetail(nodeMap[id]);
+        requestAnimationFrame(fitView);
+      } else {
+        els.detailPanel.classList.remove("open");
+        renderSnapPane(nodeMap[id] || null);
+      }
+    }
+
+    function selectLink(index) {
+      state.selectedLinkIndex = index;
+      state.selectedNodeId = null;
+      renderLinks();
+      renderNodes();
+      showLinkDetail(links[index], index);
+      renderSnapPane(null);
+      requestAnimationFrame(fitView);
+    }
+
+    function focusNode(id) {
+      const node = nodeMap[id];
+      if (!node) return;
+      const rect = els.viewport.getBoundingClientRect();
+      state.tx = rect.width / 2 - node.x * state.scale;
+      state.ty = rect.height / 2 - node.y * state.scale;
+      applyTransform();
+      selectNode(id);
+    }
+
+    function handleSearch(q) {
+      const key = q.trim().toLowerCase();
+      state.searchHits = new Set();
+      if (key) {
+        nodes.forEach((n) => {
+          if ([n.name, n.ip, n.mac].some((v) => String(v).toLowerCase().includes(key))) {
+            state.searchHits.add(n.id);
+          }
+        });
+        if (state.searchHits.size === 1) focusNode([...state.searchHits][0]);
+        else if (state.searchHits.size > 1) {
+          const first = [...state.searchHits][0];
+          const node = nodeMap[first];
+          const rect = els.viewport.getBoundingClientRect();
+          state.tx = rect.width / 2 - node.x * state.scale;
+          state.ty = rect.height / 2 - node.y * state.scale;
+          applyTransform();
+          toast(`匹配 ${state.searchHits.size} 台设备`);
+        } else toast("未找到匹配设备");
+      }
+      renderNodes();
+    }
+
+    function getContentBounds() {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      nodes.forEach((n) => {
+        minX = Math.min(minX, n.x - 50);
+        maxX = Math.max(maxX, n.x + 50);
+        minY = Math.min(minY, n.y - 42);
+        maxY = Math.max(maxY, n.y + 42);
+      });
+      zones.forEach((z) => {
+        minX = Math.min(minX, z.x);
+        maxX = Math.max(maxX, z.x + z.w);
+        minY = Math.min(minY, z.y - 8);
+        maxY = Math.max(maxY, z.y + z.h);
+      });
+      return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+    }
+
+    function syncWorldSize() {
+      const bounds = getContentBounds();
+      // 画布只包住内容坐标范围，不使用固定 2100×1280 容器
+      const pad = 80;
+      els.world.style.width = `${Math.ceil(bounds.maxX + pad)}px`;
+      els.world.style.height = `${Math.ceil(bounds.maxY + pad)}px`;
+      return bounds;
+    }
+
+    function fitView() {
+      const rect = els.viewport.getBoundingClientRect();
+      if (rect.width < 40 || rect.height < 40) return;
+      const bounds = syncWorldSize();
+      const padX = 56;
+      const padY = 24;
+      // 参考图观感：整图落入视口，略放大一点
+      let next = Math.min(
+        (rect.width - padX * 2) / bounds.w,
+        (rect.height - padY * 2) / bounds.h
+      );
+      next = Math.max(0.55, Math.min(1.15, next));
+      state.scale = next;
+      // 水平/垂直都按内容中心对齐视口中心 → 左右留白相等
+      const cx = (bounds.minX + bounds.maxX) / 2;
+      const cy = (bounds.minY + bounds.maxY) / 2;
+      state.tx = rect.width / 2 - cx * state.scale;
+      state.ty = rect.height / 2 - cy * state.scale;
+      applyTransform();
+    }
+
+    // 交互绑定
+    els.viewport.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const rect = els.viewport.getBoundingClientRect();
+      const factor = e.deltaY > 0 ? 0.92 : 1.08;
+      setScale(state.scale * factor, e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+
+    els.viewport.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".topo-node, .link-hit, .topo-zoom, .topo-panel, .topo-dropdown")) return;
+      state.panning = true;
+      state.panStart = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
+      els.viewport.classList.add("panning");
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!state.panning) return;
+      state.tx = state.panStart.tx + (e.clientX - state.panStart.x);
+      state.ty = state.panStart.ty + (e.clientY - state.panStart.y);
+      applyTransform();
+    });
+    window.addEventListener("mouseup", () => {
+      state.panning = false;
+      els.viewport.classList.remove("panning");
+    });
+
+    document.getElementById("zoomIn").addEventListener("click", () => setScale(state.scale * 1.12));
+    document.getElementById("zoomOut").addEventListener("click", () => setScale(state.scale / 1.12));
+    document.getElementById("zoomFit").addEventListener("click", fitView);
+    document.getElementById("zoomHelp").addEventListener("click", () => {
+      toast("滚轮缩放 · 拖拽平移 · 点击节点/链路查看详情");
+    });
+    document.getElementById("closePanel").addEventListener("click", () => {
+      els.detailPanel.classList.remove("open");
+      requestAnimationFrame(fitView);
+    });
+    document.getElementById("toggleSnapPane")?.addEventListener("click", () => {
+      const body = els.snapPaneBody;
+      const icon = document.querySelector("#toggleSnapPane i");
+      if (!body) return;
+      const hide = body.style.display === "none";
+      body.style.display = hide ? "" : "none";
+      if (icon) icon.className = hide ? "fa-solid fa-chevron-down" : "fa-solid fa-chevron-up";
+    });
+
+    els.addBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      els.moreMenu.classList.remove("open");
+      els.addMenu.classList.toggle("open");
+    });
+    els.addMenu.addEventListener("click", (e) => e.stopPropagation());
+    els.moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      els.addMenu.classList.remove("open");
+      els.moreMenu.classList.toggle("open");
+    });
+    els.moreMenu.addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", () => {
+      els.addMenu.classList.remove("open");
+      els.moreMenu.classList.remove("open");
+    });
+
+    function viewportCenterWorld() {
+      const rect = els.viewport.getBoundingClientRect();
+      return {
+        x: Math.round((rect.width / 2 - state.tx) / state.scale),
+        y: Math.round((rect.height / 2 - state.ty) / state.scale),
+      };
+    }
+
+    function zoneOptionsHtml(selected = "") {
+      const names = [...new Set([...zones.map((z) => z.name), ...nodes.map((n) => n.zone)])];
+      return names.map((name) => `<option value="${name}" ${name === selected ? "selected" : ""}>${name}</option>`).join("");
+    }
+
+    function typeOptionsHtml(selected = "server") {
+      return Object.entries(TYPE_META).map(([key, meta]) =>
+        `<option value="${key}" ${key === selected ? "selected" : ""}>${meta.label}</option>`
+      ).join("");
+    }
+
+    function nodeOptionsHtml(selected = "") {
+      return nodes.map((n) =>
+        `<option value="${n.id}" ${n.id === selected ? "selected" : ""}>${n.name}</option>`
+      ).join("");
+    }
+
+    function openAddDeviceDrawer() {
+      const center = viewportCenterWorld();
+      window.openAppDrawer({
+        title: "添加设备",
+        body: `
+          <div class="form-grid-2">
+            <label class="form-field form-item"><span class="form-label form-required">设备名称</span><input class="form-control" id="topoDevName" placeholder="请输入设备名称"></label>
+            <label class="form-field form-item"><span class="form-label form-required">设备类型</span><select class="form-control" id="topoDevType">${typeOptionsHtml("server")}</select></label>
+            <label class="form-field form-item"><span class="form-label form-required">所属区域</span><select class="form-control" id="topoDevZone">${zoneOptionsHtml("数据采集区")}</select></label>
+            <label class="form-field form-item"><span class="form-label">状态</span><select class="form-control" id="topoDevStatus"><option value="normal">正常</option><option value="fault">故障</option></select></label>
+            <label class="form-field form-item"><span class="form-label">IP</span><input class="form-control" id="topoDevIp" placeholder="如 10.10.1.100"></label>
+            <label class="form-field form-item"><span class="form-label">MAC</span><input class="form-control" id="topoDevMac" placeholder="如 00:1A:2B:00:00:01"></label>
+            <label class="form-field form-item"><span class="form-label">型号</span><input class="form-control" id="topoDevModel" placeholder="请输入型号"></label>
+          </div>
+          <p class="helper-text" style="margin-top:8px">新设备将放置在当前画布中心（约 ${center.x}, ${center.y}）。</p>
+        `,
+        footer: `
+          <button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="topoSaveDevice">确认添加</button>
+        `,
+      });
+      document.getElementById("topoSaveDevice")?.addEventListener("click", () => {
+        const name = document.getElementById("topoDevName").value.trim();
+        const type = document.getElementById("topoDevType").value;
+        const zone = document.getElementById("topoDevZone").value;
+        const status = document.getElementById("topoDevStatus").value;
+        const ip = document.getElementById("topoDevIp").value.trim() || "-";
+        const mac = document.getElementById("topoDevMac").value.trim() || "-";
+        const model = document.getElementById("topoDevModel").value.trim() || (TYPE_META[type]?.label || "设备");
+        if (!name) {
+          toast("请填写设备名称");
+          return;
+        }
+        const id = `dev-${Date.now()}`;
+        const pos = viewportCenterWorld();
+        const node = { id, name, type, zone, status, x: pos.x, y: pos.y, ip, mac, model };
+        nodes.push(node);
+        nodeMap[id] = node;
+        window.closeAppDrawer();
+        renderLinks();
+        renderNodes();
+        selectNode(id);
+        focusNode(id);
+        toast(`已添加设备「${name}」`);
+      });
+    }
+
+    function hasActiveFilters() {
+      return !!(state.filters.type || state.filters.zone || state.filters.status);
+    }
+
+    function syncFilterBtn() {
+      els.filterBtn?.classList.toggle("is-active", hasActiveFilters());
+      els.filterBtn?.setAttribute("title", hasActiveFilters() ? "筛选（已启用）" : "筛选");
+    }
+
+    function escapeAttr(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function applyHighlightSet(ids, tip) {
+      state.searchHits = new Set(ids);
+      renderNodes();
+      syncFilterBtn();
+      if (ids.length === 1) focusNode(ids[0]);
+      else if (ids.length > 1) {
+        const node = nodeMap[ids[0]];
+        if (node) {
+          const rect = els.viewport.getBoundingClientRect();
+          state.tx = rect.width / 2 - node.x * state.scale;
+          state.ty = rect.height / 2 - node.y * state.scale;
+          applyTransform();
+        }
+      }
+      if (tip) toast(tip);
+    }
+
+    function filteredNodeIds() {
+      const { type, zone, status } = state.filters;
+      return nodes.filter((n) =>
+        (!type || n.type === type) &&
+        (!zone || n.zone === zone) &&
+        (!status || n.status === status)
+      ).map((n) => n.id);
+    }
+
+    function openFilterDrawer() {
+      const zonesList = [...new Set(nodes.map((n) => n.zone))];
+      window.openAppDrawer({
+        title: "筛选设备",
+        body: `
+          <label class="form-field form-item"><span class="form-label">设备类型</span>
+            <select class="form-control" id="topoFilterType">
+              <option value="">全部类型</option>
+              ${Object.entries(TYPE_META).map(([k, v]) => `<option value="${k}" ${state.filters.type === k ? "selected" : ""}>${v.label}</option>`).join("")}
+            </select>
+          </label>
+          <label class="form-field form-item"><span class="form-label">所属区域</span>
+            <select class="form-control" id="topoFilterZone">
+              <option value="">全部区域</option>
+              ${zonesList.map((z) => `<option value="${z}" ${state.filters.zone === z ? "selected" : ""}>${z}</option>`).join("")}
+            </select>
+          </label>
+          <label class="form-field form-item"><span class="form-label">设备状态</span>
+            <select class="form-control" id="topoFilterStatus">
+              <option value="">全部状态</option>
+              <option value="normal" ${state.filters.status === "normal" ? "selected" : ""}>正常</option>
+              <option value="fault" ${state.filters.status === "fault" ? "selected" : ""}>故障</option>
+            </select>
+          </label>
+        `,
+        footer: `
+          <button class="btn btn-secondary" type="button" id="topoFilterReset">重置</button>
+          <button class="btn btn-primary" type="button" id="topoFilterApply">应用筛选</button>
+        `,
+      });
+      document.getElementById("topoFilterReset")?.addEventListener("click", () => {
+        state.filters = { type: "", zone: "", status: "" };
+        state.searchHits = new Set();
+        els.searchInput.value = "";
+        window.closeAppDrawer();
+        renderNodes();
+        syncFilterBtn();
+        toast("已重置筛选");
+      });
+      document.getElementById("topoFilterApply")?.addEventListener("click", () => {
+        state.filters = {
+          type: document.getElementById("topoFilterType").value,
+          zone: document.getElementById("topoFilterZone").value,
+          status: document.getElementById("topoFilterStatus").value,
+        };
+        const ids = filteredNodeIds();
+        window.closeAppDrawer();
+        if (!hasActiveFilters()) {
+          state.searchHits = new Set();
+          renderNodes();
+          syncFilterBtn();
+          toast("未设置筛选条件，已显示全部");
+          return;
+        }
+        applyHighlightSet(ids, ids.length ? `已筛选出 ${ids.length} 台设备` : "没有符合条件的设备");
+      });
+    }
+
+    function openEditDrawer() {
+      const node = state.selectedNodeId ? nodeMap[state.selectedNodeId] : null;
+      if (!node) {
+        toast("请先选中要编辑的设备");
+        return;
+      }
+      window.openAppDrawer({
+        title: "编辑设备",
+        body: `
+          <div class="form-grid-2">
+            <label class="form-field form-item"><span class="form-label form-required">设备名称</span><input class="form-control" id="topoEditName" value="${escapeAttr(node.name)}"></label>
+            <label class="form-field form-item"><span class="form-label form-required">设备类型</span><select class="form-control" id="topoEditType">${typeOptionsHtml(node.type)}</select></label>
+            <label class="form-field form-item"><span class="form-label form-required">所属区域</span><select class="form-control" id="topoEditZone">${zoneOptionsHtml(node.zone)}</select></label>
+            <label class="form-field form-item"><span class="form-label">状态</span><select class="form-control" id="topoEditStatus"><option value="normal" ${node.status === "normal" ? "selected" : ""}>正常</option><option value="fault" ${node.status === "fault" ? "selected" : ""}>故障</option></select></label>
+            <label class="form-field form-item"><span class="form-label">IP</span><input class="form-control" id="topoEditIp" value="${escapeAttr(node.ip === "-" ? "" : node.ip)}"></label>
+            <label class="form-field form-item"><span class="form-label">MAC</span><input class="form-control" id="topoEditMac" value="${escapeAttr(node.mac === "-" ? "" : node.mac)}"></label>
+            <label class="form-field form-item"><span class="form-label">型号</span><input class="form-control" id="topoEditModel" value="${escapeAttr(node.model)}"></label>
+          </div>
+        `,
+        footer: `
+          <button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="topoEditSave">保存</button>
+        `,
+      });
+      document.getElementById("topoEditSave")?.addEventListener("click", () => {
+        const name = document.getElementById("topoEditName").value.trim();
+        if (!name) {
+          toast("请填写设备名称");
+          return;
+        }
+        node.name = name;
+        node.type = document.getElementById("topoEditType").value;
+        node.zone = document.getElementById("topoEditZone").value;
+        node.status = document.getElementById("topoEditStatus").value;
+        node.ip = document.getElementById("topoEditIp").value.trim() || "-";
+        node.mac = document.getElementById("topoEditMac").value.trim() || "-";
+        node.model = document.getElementById("topoEditModel").value.trim() || node.model;
+        window.closeAppDrawer();
+        renderLinks();
+        renderNodes();
+        selectNode(node.id);
+        toast(`已保存「${node.name}」`);
+      });
+    }
+
+    function exportTopologyJson() {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        nodes,
+        links,
+        zones,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `network-topology-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("已导出拓扑 JSON");
+    }
+
+    function doDeleteSelectedNode() {
+      const id = state.selectedNodeId;
+      const node = nodeMap[id];
+      if (!id || !node) return;
+      const idx = nodes.findIndex((n) => n.id === id);
+      if (idx >= 0) nodes.splice(idx, 1);
+      delete nodeMap[id];
+      for (let i = links.length - 1; i >= 0; i -= 1) {
+        if (links[i].source === id || links[i].target === id) links.splice(i, 1);
+      }
+      state.selectedNodeId = null;
+      state.selectedLinkIndex = -1;
+      state.searchHits.delete(id);
+      els.detailPanel.classList.remove("open");
+      syncWorldSize();
+      renderLinks();
+      renderNodes();
+      toast(`已删除「${node.name}」`);
+    }
+
+    function deleteSelectedNode() {
+      const id = state.selectedNodeId;
+      if (!id || !nodeMap[id]) {
+        toast("请先选中要删除的设备");
+        return;
+      }
+      const node = nodeMap[id];
+      const message = `确认删除设备「${node.name}」及其关联链路吗？`;
+      if (window.openAppConfirm) {
+        window.openAppConfirm({
+          title: "删除设备",
+          message,
+          confirmText: "删除",
+          onConfirm: doDeleteSelectedNode,
+        });
+        return;
+      }
+      if (window.confirm(message)) doDeleteSelectedNode();
+    }
+
+    function openAddLinkDrawer() {
+      if (nodes.length < 2) {
+        toast("至少需要两台设备才能添加链路");
+        return;
+      }
+      const sourceDefault = state.selectedNodeId || nodes[0].id;
+      const targetDefault = nodes.find((n) => n.id !== sourceDefault)?.id || nodes[1].id;
+      window.openAppDrawer({
+        title: "添加链路",
+        body: `
+          <label class="form-field form-item"><span class="form-label form-required">源设备</span><select class="form-control" id="topoLinkSource">${nodeOptionsHtml(sourceDefault)}</select></label>
+          <label class="form-field form-item"><span class="form-label form-required">目标设备</span><select class="form-control" id="topoLinkTarget">${nodeOptionsHtml(targetDefault)}</select></label>
+          <label class="form-field form-item"><span class="form-label">链路状态</span><select class="form-control" id="topoLinkStatus"><option value="normal">正常</option><option value="fault">故障</option></select></label>
+        `,
+        footer: `
+          <button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="topoSaveLink">确认添加</button>
+        `,
+      });
+      document.getElementById("topoSaveLink")?.addEventListener("click", () => {
+        const source = document.getElementById("topoLinkSource").value;
+        const target = document.getElementById("topoLinkTarget").value;
+        const status = document.getElementById("topoLinkStatus").value;
+        if (!source || !target) {
+          toast("请选择源设备与目标设备");
+          return;
+        }
+        if (source === target) {
+          toast("源设备与目标设备不能相同");
+          return;
+        }
+        const exists = links.some((l) =>
+          (l.source === source && l.target === target) || (l.source === target && l.target === source)
+        );
+        if (exists) {
+          toast("这两个设备之间已存在链路");
+          return;
+        }
+        links.push({ source, target, status });
+        window.closeAppDrawer();
+        renderLinks();
+        renderNodes();
+        const idx = links.length - 1;
+        selectLink(idx);
+        toast(`已添加链路：${nodeMap[source].name} ↔ ${nodeMap[target].name}`);
+      });
+    }
+
+    const discoverState = { running: false, timers: [] };
+    const discoverPanel = document.getElementById("discoverPanel");
+    const discoverBar = document.getElementById("discoverBar");
+    const discoverResult = document.getElementById("discoverResult");
+    const protoSteps = [
+      { key: "icmp", label: "ICMP", detail: "已探测存活主机与网关", count: () => nodes.filter((n) => ["terminal", "server", "cloud"].includes(n.type)).length },
+      { key: "snmp", label: "SNMP", detail: "已采集交换机/防火墙/安全设备", count: () => nodes.filter((n) => ["switch", "core", "firewall", "security", "storage", "gatekeeper"].includes(n.type)).length },
+      { key: "hsrp", label: "HSRP", detail: "已识别核心双机与冗余上联", count: () => links.filter((l) => {
+        const a = nodeMap[l.source]; const b = nodeMap[l.target];
+        return a?.type === "core" || b?.type === "core";
+      }).length },
+      { key: "stp", label: "STP", detail: "已推断二层转发路径", count: () => links.length },
+    ];
+
+    function resetDiscoverUI() {
+      discoverState.timers.forEach((t) => clearTimeout(t));
+      discoverState.timers = [];
+      discoverState.running = false;
+      discoverBar.style.width = "0%";
+      discoverResult.classList.remove("show");
+      discoverResult.innerHTML = "";
+      document.querySelectorAll(".topo-proto").forEach((el) => {
+        el.classList.remove("running", "done");
+        el.querySelector(".tag").textContent = "等待";
+      });
+      document.getElementById("startDiscover").disabled = false;
+    }
+
+    function openDiscoverPanel() {
+      discoverPanel.classList.add("open");
+      els.detailPanel.classList.remove("open");
+      els.addMenu.classList.remove("open");
+    }
+
+    function runDiscoverMock() {
+      if (discoverState.running) return;
+      resetDiscoverUI();
+      discoverState.running = true;
+      document.getElementById("startDiscover").disabled = true;
+      toast("开始自动发现：ICMP → SNMP → HSRP → STP");
+
+      let progress = 0;
+      protoSteps.forEach((step, index) => {
+        const t1 = setTimeout(() => {
+          if (!discoverState.running) return;
+          document.querySelectorAll(".topo-proto").forEach((el) => {
+            if (!el.classList.contains("done")) {
+              el.classList.remove("running");
+              if (el.dataset.proto !== step.key) el.querySelector(".tag").textContent = el.classList.contains("done") ? "完成" : "等待";
+            }
+          });
+          const row = document.querySelector(`.topo-proto[data-proto="${step.key}"]`);
+          row.classList.add("running");
+          row.querySelector(".tag").textContent = "进行中";
+          progress = Math.round(((index + 0.45) / protoSteps.length) * 100);
+          discoverBar.style.width = `${progress}%`;
+        }, index * 900);
+        const t2 = setTimeout(() => {
+          if (!discoverState.running) return;
+          const row = document.querySelector(`.topo-proto[data-proto="${step.key}"]`);
+          row.classList.remove("running");
+          row.classList.add("done");
+          row.querySelector(".tag").textContent = "完成";
+          progress = Math.round(((index + 1) / protoSteps.length) * 100);
+          discoverBar.style.width = `${progress}%`;
+          if (index === protoSteps.length - 1) {
+            const l2 = nodes.filter((n) => ["switch", "core", "terminal", "printer"].includes(n.type)).length;
+            const l3 = nodes.filter((n) => ["firewall", "server", "security", "gatekeeper", "cloud"].includes(n.type)).length;
+            discoverResult.innerHTML = `
+              <strong>发现完成</strong><br>
+              协议：ICMP / SNMP / HSRP / STP<br>
+              二层相关设备约 ${l2} 台，三层/安全/出口约 ${l3} 台<br>
+              链路关系 ${links.length} 条，已刷新当前全局拓扑图
+            `;
+            discoverResult.classList.add("show");
+            discoverState.running = false;
+            document.getElementById("startDiscover").disabled = false;
+            renderLinks();
+            renderNodes();
+            requestAnimationFrame(fitView);
+            toast("拓扑自动发现完成，已按发现结果展示全局拓扑");
+          }
+        }, index * 900 + 700);
+        discoverState.timers.push(t1, t2);
+      });
+    }
+
+    document.getElementById("discoverBtn").addEventListener("click", () => {
+      openDiscoverPanel();
+      runDiscoverMock();
+    });
+    document.getElementById("startDiscover").addEventListener("click", runDiscoverMock);
+    document.getElementById("stopDiscover").addEventListener("click", () => {
+      resetDiscoverUI();
+      toast("已停止自动发现");
+    });
+    document.getElementById("closeDiscover").addEventListener("click", () => {
+      resetDiscoverUI();
+      discoverPanel.classList.remove("open");
+    });
+
+    document.querySelectorAll("[data-mock-action]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const action = btn.dataset.mockAction;
+        els.addMenu.classList.remove("open");
+        els.moreMenu.classList.remove("open");
+        if (action === "add-device") {
+          openAddDeviceDrawer();
+          return;
+        }
+        if (action === "add-link") {
+          openAddLinkDrawer();
+          return;
+        }
+        if (action === "filter") {
+          openFilterDrawer();
+          return;
+        }
+        if (action === "edit") {
+          openEditDrawer();
+          return;
+        }
+        if (action === "export") {
+          exportTopologyJson();
+          return;
+        }
+        toast("操作成功");
+      });
+    });
+
+    els.moreMenu.querySelectorAll("[data-more-action]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const action = btn.dataset.moreAction;
+        els.moreMenu.classList.remove("open");
+        if (action === "fit") {
+          fitView();
+          toast("已适应画布");
+          return;
+        }
+        if (action === "show-all") {
+          state.filters = { type: "", zone: "", status: "" };
+          state.searchHits = new Set();
+          els.searchInput.value = "";
+          renderNodes();
+          syncFilterBtn();
+          fitView();
+          toast("已显示全部设备");
+          return;
+        }
+        if (action === "fault-only") {
+          state.filters = { type: "", zone: "", status: "fault" };
+          const ids = filteredNodeIds();
+          applyHighlightSet(ids, ids.length ? `共 ${ids.length} 台故障设备` : "当前无故障设备");
+          return;
+        }
+        if (action === "export-json") {
+          exportTopologyJson();
+          return;
+        }
+        if (action === "delete-selected") {
+          deleteSelectedNode();
+        }
+      });
+    });
+
+    let searchTimer;
+    els.searchInput.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => handleSearch(els.searchInput.value), 180);
+    });
+
+    els.viewport.addEventListener("click", (e) => {
+      if (e.target.closest(".topo-node, .link-hit, .topo-panel, .topo-zoom, .topo-dropdown, button, input")) return;
+      const wasOpen = els.detailPanel.classList.contains("open");
+      state.selectedNodeId = null;
+      state.selectedLinkIndex = -1;
+      els.detailPanel.classList.remove("open");
+      renderLinks();
+      renderNodes();
+      if (wasOpen) requestAnimationFrame(fitView);
+    });
+
+    // 初始渲染：默认选中防火墙-A03（不弹详情）
+    syncWorldSize();
+    renderZones();
+    renderLinks();
+    renderNodes();
+    syncFilterBtn();
+    selectNode("fw-a03", { openPanel: false });
+    const bootFit = () => fitView();
+    requestAnimationFrame(() => requestAnimationFrame(bootFit));
+    window.addEventListener("load", () => setTimeout(bootFit, 80));
+    window.addEventListener("resize", () => {
+      clearTimeout(fitView._resizeTimer);
+      fitView._resizeTimer = setTimeout(fitView, 120);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>敏感数据分类分级 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/data-security.css">
+</head>
+<body class="dsec-page" data-menu-key="data.classify" data-page-section="数据安全管理" data-page-title="敏感数据分类分级">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsecClMetrics">
+          <article class="metric-card"><div class="metric-label">资产覆盖数</div><div class="metric-number" data-m="assetCovered">0</div></article>
+          <article class="metric-card"><div class="metric-label">待复核</div><div class="metric-number" data-m="pendingReview">0</div></article>
+          <article class="metric-card"><div class="metric-label">已发布</div><div class="metric-number" data-m="published">0</div></article>
+          <article class="metric-card"><div class="metric-label">低置信度</div><div class="metric-number" data-m="lowConfidence">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="dsec-tabs" id="stageTabs">
+            <button type="button" class="tab active" data-stage="">全部</button>
+            <button type="button" class="tab" data-stage="identified">自动识别</button>
+            <button type="button" class="tab" data-stage="tagged">人工打标</button>
+            <button type="button" class="tab" data-stage="review">结果审核</button>
+            <button type="button" class="tab" data-stage="accept">结果验收</button>
+            <button type="button" class="tab" data-stage="published">结果发布</button>
+          </div>
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">资产类型</span>
+              <select class="form-control" data-filter="type"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">分类</span>
+              <input class="form-control" data-filter="category" placeholder="分类名称">
+            </label>
+            <label class="form-field"><span class="form-label">级别</span>
+              <select class="form-control" data-filter="level">
+                <option value="">全部</option>
+                <option value="L1">公开</option>
+                <option value="L2">内部</option>
+                <option value="L3">敏感</option>
+                <option value="L4">机密</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">识别方式</span>
+              <select class="form-control" data-filter="method"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">场景模板</span>
+              <select class="form-control" data-filter="sceneTemplate"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="资产/分类">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">分类分级结果</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export-api"><i class="fa-solid fa-cloud-arrow-up"></i> 导出结果 API</button>
+              <button class="btn btn-primary" type="button" data-action="scan"><i class="fa-solid fa-magnifying-glass"></i> 发起扫描</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>资产名称</th><th>类型</th><th>分类</th><th>级别</th><th>识别方式</th>
+                  <th>置信度</th><th>阶段</th><th>最近扫描</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsecClBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsecClPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/data-security-mock.js"></script>
+  <script>
+    const DS = window.DataSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+    let stageFilter = "";
+    const params = new URLSearchParams(location.search);
+    const focusLabelId = params.get("labelId") || "";
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function fillFilters() {
+      const typeSel = document.querySelector("[data-filter='type']");
+      typeSel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.ASSET_TYPE_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const methodSel = document.querySelector("[data-filter='method']");
+      methodSel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.METHOD_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const sceneSel = document.querySelector("[data-filter='sceneTemplate']");
+      sceneSel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.SCENE_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = DS.classifyMetrics();
+      document.querySelectorAll("#dsecClMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsecClPager").innerHTML = html;
+    }
+
+    function evidenceText(ev) {
+      if (Array.isArray(ev)) return ev.join("；");
+      return ev || "-";
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = DS.listLabels({
+        stage: stageFilter || undefined,
+        type: f.type || undefined,
+        category: f.category || undefined,
+        level: f.level || undefined,
+        method: f.method || undefined,
+        sceneTemplate: f.sceneTemplate || undefined,
+        keyword: f.keyword || undefined,
+      });
+      if (focusLabelId) {
+        const idx = filtered.findIndex((l) => l.id === focusLabelId);
+        if (idx >= 0) currentPage = Math.floor(idx / pageSize) + 1;
+      }
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dsecClBody").innerHTML = pageRows.map((row) => {
+        const asset = DS.getAsset(row.assetId);
+        const needReview = row.conflict || row.confidence < 60 || row.stage === "review" || row.stage === "accept";
+        const canAdvance = row.stage !== "published" && row.stage !== "false_positive";
+        const reviewBtn = needReview
+          ? `<button class="table-action" type="button" data-row="review" data-id="${esc(row.id)}">复核</button>`
+          : `<button class="table-action" type="button" data-row="review" data-id="${esc(row.id)}">复核/纠错</button>`;
+        const advanceBtn = canAdvance
+          ? `<button class="table-action" type="button" data-row="advance" data-id="${esc(row.id)}">推进</button>`
+          : "";
+        const highlight = row.id === focusLabelId ? ' style="background:var(--primary-bg)"' : "";
+        return `<tr${highlight}>
+          <td>${dash(asset?.name)}</td>
+          <td>${dash(DS.ASSET_TYPE_LABEL[asset?.type] || asset?.type)}</td>
+          <td>${dash(row.category)}</td>
+          <td>${tagHtml(DS.levelTag(row.level))}</td>
+          <td>${dash(DS.METHOD_LABEL[row.method] || row.method)}</td>
+          <td>${dash(row.confidence)}</td>
+          <td>${tagHtml(DS.stageTag(row.stage))}</td>
+          <td>${dash(row.scannedAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            ${reviewBtn}
+            ${advanceBtn}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = DS.getLabel(id);
+      if (!row) return;
+      const asset = DS.getAsset(row.assetId);
+      const auditCount = DS.listDbAuditEvents({ labelId: id }).length;
+      const flowCount = DS.listFlowEvents({ labelId: id }).length;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("资产名称", dash(asset?.name))}
+            ${infoItem("资产类型", dash(DS.ASSET_TYPE_LABEL[asset?.type] || asset?.type))}
+            ${infoItem("存储位置", dash(asset?.location))}
+            ${infoItem("责任人/部门", dash((asset?.owner || "-") + " / " + (asset?.dept || "-")))}
+            ${infoItem("分类", dash(row.category))}
+            ${infoItem("级别", tagHtml(DS.levelTag(row.level)))}
+            ${infoItem("识别方式", dash(DS.METHOD_LABEL[row.method] || row.method))}
+            ${infoItem("置信度", dash(row.confidence))}
+            ${infoItem("阶段", tagHtml(DS.stageTag(row.stage)))}
+            ${infoItem("冲突标记", row.conflict ? '<span class="tag danger">是</span>' : "否")}
+            ${infoItem("场景模板", dash(DS.SCENE_LABEL[row.sceneTemplate] || row.sceneTemplate))}
+            ${infoItem("建议保护策略", dash(row.protectPolicy))}
+            ${infoItem("最近扫描", dash(row.scannedAt))}
+            ${infoItem("复核时间", dash(row.reviewedAt))}
+            ${infoItem("发布时间", dash(row.publishedAt))}
+            ${infoItem("命中证据", `<span class="dsec-evidence">${esc(evidenceText(row.evidence))}</span>`)}
+            ${infoItem("关联审计", `<a href="./db-audit.html?labelId=${encodeURIComponent(id)}" style="color:var(--primary)">${auditCount} 条</a>`)}
+            ${infoItem("关联流转", `<a href="./flow.html?labelId=${encodeURIComponent(id)}" style="color:var(--primary)">${flowCount} 条</a>`)}
+            ${infoItem("备注信息", dash(row.reviewRemark))}
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "分类分级详情",
+        subtitle: "数据安全管理 · 敏感数据分类分级",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>',
+      });
+    }
+
+    function openReview(id) {
+      const row = DS.getLabel(id);
+      if (!row) return;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">复核 / 纠错</h3>
+          <div class="form-item"><label class="form-label form-required">动作</label>
+            <select class="form-control" id="reviewAction">
+              <option value="confirm">确认分级</option>
+              <option value="retarget">改标</option>
+              <option value="false_positive">标记误报</option>
+            </select>
+          </div>
+          <div class="form-item" id="retargetFields" hidden>
+            <label class="form-label">分类</label>
+            <input class="form-control" id="reviewCategory" value="${esc(row.category)}">
+            <label class="form-label" style="margin-top:12px">级别</label>
+            <select class="form-control" id="reviewLevel">
+              <option value="L1" ${row.level === "L1" ? "selected" : ""}>公开 L1</option>
+              <option value="L2" ${row.level === "L2" ? "selected" : ""}>内部 L2</option>
+              <option value="L3" ${row.level === "L3" ? "selected" : ""}>敏感 L3</option>
+              <option value="L4" ${row.level === "L4" ? "selected" : ""}>机密 L4</option>
+            </select>
+          </div>
+          <div class="form-item"><label class="form-label">说明</label>
+            <textarea class="form-control textarea" id="reviewRemark" placeholder="复核说明"></textarea>
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "结果复核",
+        subtitle: row.category + " · " + (DS.levelTag(row.level).label || ""),
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="confirmReview">确认</button>`,
+      });
+      setTimeout(() => {
+        const act = document.getElementById("reviewAction");
+        const fields = document.getElementById("retargetFields");
+        const sync = () => { fields.hidden = act.value !== "retarget"; };
+        act.addEventListener("change", sync);
+        sync();
+        document.getElementById("confirmReview")?.addEventListener("click", () => {
+          DS.reviewLabel(id, {
+            action: act.value,
+            category: document.getElementById("reviewCategory")?.value.trim(),
+            level: document.getElementById("reviewLevel")?.value,
+            remark: document.getElementById("reviewRemark").value.trim(),
+          });
+          document.querySelector("[data-drawer-close]")?.click();
+          render();
+        });
+      }, 0);
+    }
+
+    function openScan() {
+      const assets = DS.listAssets();
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">发起扫描</h3>
+          <div class="form-item"><label class="form-label form-required">场景模板</label>
+            <select class="form-control" id="scanScene">
+              ${Object.entries(DS.SCENE_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-item"><label class="form-label form-required">选择资产</label>
+            <div style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:4px;padding:8px 12px">
+              ${assets.map((a) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px">
+                <input type="checkbox" name="scanAsset" value="${esc(a.id)}"> ${esc(a.name)}
+              </label>`).join("")}
+            </div>
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "发起扫描",
+        subtitle: "数据安全管理 · 敏感数据分类分级",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="confirmScan">开始扫描</button>`,
+      });
+      setTimeout(() => {
+        document.getElementById("confirmScan")?.addEventListener("click", () => {
+          const ids = [...document.querySelectorAll("input[name='scanAsset']:checked")].map((el) => el.value);
+          if (!ids.length) { alert("请至少选择一个资产"); return; }
+          DS.startScan({ assetIds: ids, sceneTemplate: document.getElementById("scanScene").value });
+          document.querySelector("[data-drawer-close]")?.click();
+          stageFilter = "identified";
+          document.querySelectorAll("#stageTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.stage === "identified"));
+          currentPage = 1;
+          render();
+        });
+      }, 0);
+    }
+
+    fillFilters();
+    render();
+    if (focusLabelId) {
+      const hit = DS.getLabel(focusLabelId);
+      if (hit) setTimeout(() => openDetail(focusLabelId), 200);
+    }
+
+    document.addEventListener("click", (event) => {
+      const stageBtn = event.target.closest("#stageTabs .tab");
+      if (stageBtn) {
+        document.querySelectorAll("#stageTabs .tab").forEach((t) => t.classList.remove("active"));
+        stageBtn.classList.add("active");
+        stageFilter = stageBtn.dataset.stage || "";
+        currentPage = 1;
+        render();
+        return;
+      }
+
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        stageFilter = "";
+        document.querySelectorAll("#stageTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.stage === ""));
+        currentPage = 1;
+        render();
+      }
+      if (action === "scan") openScan();
+      if (action === "export-api") alert("已模拟调用下游数据安全产品 API，分类分级结果同步成功（原型演示）。");
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "review") openReview(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "advance") {
+          DS.advanceLabelStage(rowBtn.dataset.id);
+          render();
+        }
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

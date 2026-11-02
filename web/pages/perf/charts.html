@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>性能监测图表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body data-menu-key="perf.charts" data-page-section="性能监测" data-page-title="性能监测图表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">性能监测图表</h1>
+            <p class="page-desc">提供性能实时图表与历史数据查询，涵盖可用率、连通率、负载与告警等多套报表。</p>
+          </div>
+        </section>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">时间范围</span>
+              <select class="form-control" data-filter="range">
+                <option value="24h">近 24 小时</option>
+                <option value="7d">近 7 天</option>
+                <option value="30d">近 30 天</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">资源类型</span>
+              <select class="form-control" data-filter="type">
+                <option value="">全部</option>
+                <option>网络设备</option>
+                <option>线路</option>
+                <option>服务器</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">对象关键字</span><input class="form-control" data-filter="keyword" placeholder="请输入"></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+          </div>
+        </section>
+
+        <section class="perf-chart-grid" id="chartGrid"></section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/data/perf-mock.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script>
+    function axisBounds(values) {
+      const rawMax = Math.max(...values, 1);
+      const rawMin = Math.min(...values, 0);
+      const niceMax = Math.ceil(rawMax / 10) * 10 || 10;
+      const niceMin = Math.max(0, Math.floor(rawMin / 10) * 10);
+      return { min: niceMin, max: niceMax === niceMin ? niceMin + 10 : niceMax };
+    }
+
+    function pointXY(values, i, w, h, padL, padR, padT, padB, min, max) {
+      const span = Math.max(max - min, 1);
+      const x = padL + (i * (w - padL - padR)) / Math.max(values.length - 1, 1);
+      const y = padT + (1 - (values[i] - min) / span) * (h - padT - padB);
+      return { x, y };
+    }
+
+    function linePath(values, w, h, padL, padR, padT, padB, min, max) {
+      return values.map((v, i) => {
+        const { x, y } = pointXY(values, i, w, h, padL, padR, padT, padB, min, max);
+        return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+      }).join(" ");
+    }
+
+    function areaPath(values, w, h, padL, padR, padT, padB, min, max) {
+      const line = linePath(values, w, h, padL, padR, padT, padB, min, max);
+      const x0 = padL;
+      const x1 = w - padR;
+      const yBase = h - padB;
+      return `${line} L${x1.toFixed(1)} ${yBase} L${x0} ${yBase} Z`;
+    }
+
+    function xLabelsForRange(count) {
+      const range = document.querySelector('[data-filter="range"]')?.value || "24h";
+      if (range === "7d") {
+        return Array.from({ length: count }, (_, i) => `${i * Math.max(1, Math.floor(7 / Math.max(count - 1, 1)))}日`);
+      }
+      if (range === "30d") {
+        return Array.from({ length: count }, (_, i) => `${1 + Math.round((i * 29) / Math.max(count - 1, 1))}日`);
+      }
+      return Array.from({ length: count }, (_, i) => {
+        const h = Math.round((i * 24) / Math.max(count - 1, 1));
+        return `${String(h).padStart(2, "0")}:00`;
+      });
+    }
+
+    function renderCurveCard(title, subtitle, values, gradId) {
+      const W = 820, H = 240;
+      const padL = 48, padR = 56, padT = 28, padB = 36;
+      const { min, max } = axisBounds(values);
+      const dLine = linePath(values, W, H, padL, padR, padT, padB, min, max);
+      const dArea = areaPath(values, W, H, padL, padR, padT, padB, min, max);
+      const peak = Math.max(...values);
+      const yTicks = 4;
+      const grid = [];
+      const yLabels = [];
+      for (let i = 0; i <= yTicks; i++) {
+        const t = i / yTicks;
+        const val = max - (max - min) * t;
+        const y = padT + t * (H - padT - padB);
+        grid.push(`<path d="M${padL} ${y.toFixed(1)}H${W - padR}"/>`);
+        yLabels.push(`<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#86909c" font-size="11">${Math.round(val)}</text>`);
+      }
+      const xTickIdx = [0, Math.floor((values.length - 1) / 2), values.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+      const labels = xLabelsForRange(values.length);
+      const xLabels = xTickIdx.map((idx) => {
+        const { x } = pointXY(values, idx, W, H, padL, padR, padT, padB, min, max);
+        const anchor = idx === 0 ? "start" : idx === values.length - 1 ? "end" : "middle";
+        return `<text x="${x.toFixed(1)}" y="${H - 10}" text-anchor="${anchor}" fill="#86909c" font-size="11">${labels[idx] || ""}</text>`;
+      }).join("");
+      return `<article class="card pad perf-chart-card">
+        <div class="card-title-row"><h2 class="card-title">${title}</h2><span class="status-muted">${subtitle}</span></div>
+        <div class="chart">
+          <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">
+            <defs><linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#5B83FF" stop-opacity="0.28"/>
+              <stop offset="100%" stop-color="#5B83FF" stop-opacity="0"/>
+            </linearGradient></defs>
+            <g stroke="#EDF1F7" stroke-width="1">${grid.join("")}</g>
+            <path d="M${padL} ${padT}V${H - padB}H${W - padR}" fill="none" stroke="#C9CDD4" stroke-width="1.5"/>
+            <path d="${dArea}" fill="url(#${gradId})"/>
+            <path d="${dLine}" fill="none" stroke="#5B83FF" stroke-width="3"/>
+            ${yLabels.join("")}
+            ${xLabels}
+            <text x="${W - padR}" y="${padT - 8}" text-anchor="end" fill="#135AFA" font-size="12" font-weight="600">峰值 ${peak}</text>
+          </svg>
+        </div>
+      </article>`;
+    }
+
+    function renderBarCard(title, subtitle, items, teal) {
+      const rowsHtml = items.map((item) => {
+        const width = Math.min(100, Math.max(4, Number(item.value) || 0));
+        return `<div class="perf-bar-row"><span>${item.name}</span><div class="perf-bar-track ${teal ? "teal" : ""}"><span style="width:${width}%"></span></div><strong>${item.value}%</strong></div>`;
+      }).join("");
+      return `<article class="card pad perf-chart-card">
+        <div class="card-title-row"><h2 class="card-title">${title}</h2><span class="status-muted">${subtitle}</span></div>
+        <div class="perf-bar-list">${rowsHtml}</div>
+      </article>`;
+    }
+
+    function renderPieCard(title, subtitle, slices) {
+      const total = slices.reduce((s, x) => s + x.value, 0) || 1;
+      let acc = 0;
+      const stops = slices.map((s) => {
+        const start = (acc / total) * 100;
+        acc += s.value;
+        const end = (acc / total) * 100;
+        return `${s.color} ${start}% ${end}%`;
+      }).join(", ");
+      const legend = slices.map((s) => `<div class="health-row"><span>${s.name}</span><div class="bar"><span style="width:${Math.round((s.value / total) * 100)}%;background:${s.color}"></span></div><strong>${s.value}</strong></div>`).join("");
+      return `<article class="card pad perf-chart-card">
+        <div class="card-title-row"><h2 class="card-title">${title}</h2><span class="status-muted">${subtitle}</span></div>
+        <div class="perf-alarm-wrap">
+          <div class="perf-donut" style="background:conic-gradient(${stops})"></div>
+          <div class="health-list">${legend}</div>
+        </div>
+      </article>`;
+    }
+
+    function seedFromFilters() {
+      const range = document.querySelector('[data-filter="range"]').value;
+      const type = document.querySelector('[data-filter="type"]').value;
+      const keyword = document.querySelector('[data-filter="keyword"]').value.trim();
+      let seed = range === "7d" ? 2 : range === "30d" ? 4 : 0;
+      if (type === "线路") seed += 1;
+      if (type === "服务器") seed += 2;
+      if (keyword) seed += keyword.length % 5;
+      return seed;
+    }
+
+    function renderCharts() {
+      const data = window.PERF_DATA.chartBundle(seedFromFilters());
+      document.getElementById("chartGrid").innerHTML = [
+        renderCurveCard("网络设备可用率", data.subtitle, data.deviceAvail, "perfGrad1"),
+        renderCurveCard("线路连通率", data.subtitle, data.linkConn, "perfGrad2"),
+        renderBarCard("网络设备负载分析", data.subtitle, data.deviceLoad, false),
+        renderBarCard("线路负载分析", data.subtitle, data.linkLoad, true),
+        renderPieCard("网络告警分布", data.subtitle, data.alarms),
+        renderCurveCard("服务器性能统计", data.subtitle, data.serverPerf, "perfGrad3"),
+      ].join("");
+    }
+
+    renderCharts();
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => {
+          el.value = el.tagName === "SELECT" ? el.options[0].value : "";
+        });
+        renderCharts();
+      }
+      if (action === "search") renderCharts();
+    });
+  </script>
+</body>
+</html>

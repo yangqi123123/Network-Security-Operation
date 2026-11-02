@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>合规报表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/report.css">
+  <link rel="stylesheet" href="../../assets/css/compliance.css">
+</head>
+<body class="report-page" data-menu-key="compliance.report" data-page-section="安全合规与审计" data-page-title="合规报表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters rpt-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">时间范围</span>
+              <select class="form-control" data-filter="range">
+                <option value="24h">近 24 小时</option>
+                <option value="7d" selected>近 7 天</option>
+                <option value="30d">近 30 天</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">报表用途</span>
+              <select class="form-control" data-filter="purpose">
+                <option value="管理汇报" selected>管理汇报</option>
+                <option value="监管检查">监管检查</option>
+                <option value="内部审计">内部审计</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+            <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出报表</button>
+          </div>
+        </section>
+
+        <section class="rpt-metrics" id="cpReportKpis"></section>
+
+        <h2 class="rpt-section-title">九维合规能力</h2>
+        <section class="rpt-chart-grid">
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">九维合规雷达</h2></div>
+            <div class="rpt-chart-el" id="cRadar"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">分域合规得分</h2></div>
+            <div class="rpt-chart-el" id="cDomain"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">合规趋势</h2></div>
+            <div class="rpt-chart-el" id="cTrend"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">等保检查项状态</h2></div>
+            <div class="rpt-chart-el" id="cCheck"></div>
+          </article>
+        </section>
+
+        <h2 class="rpt-section-title">对象汇聚</h2>
+        <section class="rpt-chart-grid">
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">资产风险分布</h2></div>
+            <div class="rpt-chart-el" id="cAsset"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">漏洞处置漏斗</h2></div>
+            <div class="rpt-chart-el" id="cVuln"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">基线通过/偏离</h2></div>
+            <div class="rpt-chart-el" id="cBaseline"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">日志采集健康</h2></div>
+            <div class="rpt-chart-el" id="cLog"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">事件等级分布</h2></div>
+            <div class="rpt-chart-el" id="cEvent"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">策略类型覆盖</h2></div>
+            <div class="rpt-chart-el" id="cPolicy"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">账号风险项</h2></div>
+            <div class="rpt-chart-el" id="cAccount"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">数据安全态势</h2></div>
+            <div class="rpt-chart-el" id="cData"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">整改结果</h2></div>
+            <div class="rpt-chart-el" id="cRemediation"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">等保六大类得分</h2></div>
+            <div class="rpt-chart-el" id="cMlpsClass"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">报表快照</h2>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-action="generate"><i class="fa-solid fa-file-export"></i> 生成当前报表</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>报表名称</th><th>用途</th><th>时间范围</th><th>综合得分</th><th>负责人</th><th>生成时间</th><th>状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="cpReportBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/compliance-mock.js"></script>
+  <script>
+    const CP = window.Compliance;
+    const charts = {};
+    let snapshots = [];
+    const C = { primary: "#1476FF", red: "#F53F57", yellow: "#F7BA1E", green: "#14C9BA", purple: "#9359E3" };
+
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+
+    function ensure(id, key) {
+      if (!charts[key]) charts[key] = echarts.init(document.getElementById(id));
+      return charts[key];
+    }
+
+    function tagHtml(label, cls) {
+      return `<span class="tag ${cls || ""}">${esc(label)}</span>`;
+    }
+
+    function statusTag(status) {
+      const cls = status === "已归档" ? "success" : status === "已生成" ? "" : "warning";
+      return tagHtml(status || "-", cls);
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function currentRange() {
+      return document.querySelector('[data-filter="range"]').value || "7d";
+    }
+
+    function currentPurpose() {
+      return document.querySelector('[data-filter="purpose"]').value || "管理汇报";
+    }
+
+    function rangeLabel(range) {
+      return ({ "24h": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" })[range] || range;
+    }
+
+    function renderSnapshots() {
+      document.getElementById("cpReportBody").innerHTML = snapshots.map((row) => `
+        <tr data-id="${esc(row.id)}">
+          <td>${dash(row.name)}</td>
+          <td>${dash(row.purpose)}</td>
+          <td>${esc(rangeLabel(row.range))}</td>
+          <td>${esc(row.score)}</td>
+          <td>${dash(row.owner)}</td>
+          <td>${dash(row.generatedAt)}</td>
+          <td>${statusTag(row.status)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          </td>
+        </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function openDetail(id) {
+      const row = snapshots.find((x) => String(x.id) === String(id));
+      if (!row) return;
+      const body = `<section class="detail-section"><h3 class="detail-title">报表信息</h3>
+        <div class="detail-grid user-detail-grid">
+          ${infoItem("报表名称", dash(row.name))}
+          ${infoItem("用途", dash(row.purpose))}
+          ${infoItem("时间范围", esc(rangeLabel(row.range)))}
+          ${infoItem("综合得分", esc(row.score))}
+          ${infoItem("负责人", dash(row.owner))}
+          ${infoItem("生成时间", dash(row.generatedAt))}
+          ${infoItem("状态", statusTag(row.status))}
+          ${infoItem("汇聚说明", dash(row.summary))}
+        </div></section>`;
+      window.openAppDrawer({
+        title: "报表详情",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>',
+      });
+    }
+
+    function paint() {
+      const data = CP.getComplianceReport(currentRange(), currentPurpose());
+      snapshots = data.snapshots || [];
+
+      document.getElementById("cpReportKpis").innerHTML = data.kpis.map((k) =>
+        `<div class="rpt-metric"><div class="label">${esc(k.label)}</div><div class="value">${esc(k.value)}</div><div class="sub">${esc(k.sub || "")}</div></div>`
+      ).join("");
+
+      ensure("cRadar", "radar").setOption({
+        color: [C.primary],
+        tooltip: {},
+        radar: { indicator: data.radar.indicators, radius: "62%" },
+        series: [{ type: "radar", data: [{ value: data.radar.values, name: "合规得分", areaStyle: { opacity: 0.15 } }] }],
+      });
+
+      ensure("cDomain", "domain").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis", formatter: (p) => `${p[0].name}: ${p[0].value}` },
+        grid: { left: 48, right: 16, top: 24, bottom: 48 },
+        xAxis: { type: "category", data: data.domainBars.map((d) => d.name), axisLabel: { rotate: 25 } },
+        yAxis: { type: "value", max: 100 },
+        series: [{ type: "bar", barWidth: 22, data: data.domainBars.map((d) => d.value), itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+      });
+
+      ensure("cTrend", "trend").setOption({
+        color: [C.primary, C.purple, C.green],
+        tooltip: { trigger: "axis" },
+        legend: { top: 0, data: ["合规得分", "事件量", "日志量"] },
+        grid: { left: 48, right: 48, top: 36, bottom: 28 },
+        xAxis: { type: "category", data: data.trend.labels },
+        yAxis: [
+          { type: "value", name: "得分", max: 100 },
+          { type: "value", name: "量" },
+        ],
+        series: [
+          { name: "合规得分", type: "line", smooth: true, data: data.trend.score },
+          { name: "事件量", type: "bar", yAxisIndex: 1, barWidth: 14, data: data.trend.events },
+          { name: "日志量", type: "line", smooth: true, yAxisIndex: 1, data: data.trend.logs },
+        ],
+      });
+
+      ensure("cCheck", "check").setOption({
+        color: [C.green, C.yellow, C.red, "#86909C"],
+        tooltip: { trigger: "item" },
+        series: [{ type: "pie", radius: ["40%", "68%"], data: data.checkStatusPie.map((d) => ({ name: d.name, value: d.value })) }],
+      });
+
+      ensure("cAsset", "asset").setOption({
+        color: [C.red, C.yellow, C.primary, C.green],
+        tooltip: { trigger: "item" },
+        series: [{ type: "pie", radius: ["40%", "68%"], data: data.assetRisk.map((d) => ({ name: d.name, value: d.value })) }],
+      });
+
+      ensure("cVuln", "vuln").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "funnel",
+          left: "12%",
+          width: "70%",
+          label: { formatter: "{b}: {c}" },
+          data: data.vulnFunnel.map((d) => ({ name: d.name, value: d.value })),
+        }],
+      });
+
+      ensure("cBaseline", "baseline").setOption({
+        color: [C.green, C.red],
+        tooltip: { trigger: "axis" },
+        legend: { top: 0 },
+        grid: { left: 48, right: 16, top: 36, bottom: 28 },
+        xAxis: { type: "category", data: data.baselineBars.map((d) => d.name) },
+        yAxis: { type: "value" },
+        series: [
+          { name: "通过", type: "bar", stack: "b", data: data.baselineBars.map((d) => d.pass) },
+          { name: "偏离", type: "bar", stack: "b", data: data.baselineBars.map((d) => d.fail) },
+        ],
+      });
+
+      ensure("cLog", "log").setOption({
+        color: [C.green, C.yellow, C.red, C.purple],
+        tooltip: { trigger: "item" },
+        series: [{ type: "pie", radius: ["40%", "68%"], data: data.logHealth.map((d) => ({ name: d.name, value: d.value })) }],
+      });
+
+      ensure("cEvent", "event").setOption({
+        color: [C.red, C.yellow, C.primary, C.green],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.eventLevel.map((d) => d.name) },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", barWidth: 28, data: data.eventLevel.map((d) => d.value) }],
+      });
+
+      ensure("cPolicy", "policy").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 56 },
+        xAxis: { type: "category", data: data.policyTypeBars.map((d) => d.name), axisLabel: { rotate: 30 } },
+        yAxis: { type: "value", minInterval: 1 },
+        series: [{ type: "bar", barWidth: 18, data: data.policyTypeBars.map((d) => d.value) }],
+      });
+
+      ensure("cAccount", "account").setOption({
+        color: [C.purple],
+        tooltip: { trigger: "axis" },
+        grid: { left: 100, right: 24, top: 16, bottom: 24 },
+        xAxis: { type: "value" },
+        yAxis: { type: "category", data: data.accountRisk.map((d) => d.name) },
+        series: [{ type: "bar", barWidth: 16, data: data.accountRisk.map((d) => d.value) }],
+      });
+
+      ensure("cData", "data").setOption({
+        color: [C.primary, C.yellow, C.red, C.green],
+        tooltip: { trigger: "item" },
+        series: [{ type: "pie", radius: ["40%", "68%"], data: data.dataSec.map((d) => ({ name: d.name, value: d.value })) }],
+      });
+
+      ensure("cRemediation", "remediation").setOption({
+        color: [C.yellow, C.primary, C.purple, C.green],
+        tooltip: { trigger: "item" },
+        series: [{ type: "pie", radius: ["40%", "68%"], data: data.remediationPie.map((d) => ({ name: d.name, value: d.value })) }],
+      });
+
+      ensure("cMlpsClass", "mlpsClass").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis", formatter: (p) => `${p[0].name}: ${p[0].value}` },
+        grid: { left: 48, right: 16, top: 24, bottom: 48 },
+        xAxis: { type: "category", data: data.mlpsClassBars.map((d) => d.name), axisLabel: { rotate: 20 } },
+        yAxis: { type: "value", max: 100, name: "得分" },
+        series: [{ type: "bar", barWidth: 28, data: data.mlpsClassBars.map((d) => d.value), itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+      });
+
+      renderSnapshots();
+    }
+
+    paint();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") paint();
+      if (action === "reset") {
+        document.querySelector('[data-filter="range"]').value = "7d";
+        document.querySelector('[data-filter="purpose"]').value = "管理汇报";
+        paint();
+      }
+      if (action === "export" || action === "generate") {
+        alert("报表导出/生成为原型演示，当前不会生成真实文件。");
+        if (action === "generate") {
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, "0");
+          const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+          const data = CP.getComplianceReport(currentRange(), currentPurpose());
+          snapshots = [
+            {
+              id: `CR-${Date.now()}`,
+              name: `${currentPurpose()}-合规报表`,
+              purpose: currentPurpose(),
+              range: currentRange(),
+              score: Number(String(data.kpis[0].value).replace("%", "")) || data.snapshots[0].score,
+              owner: "当前用户",
+              generatedAt: ts,
+              status: "已生成",
+              summary: "自动汇聚资产、漏洞、基线、日志、事件、策略、账号、数据安全与整改结果",
+            },
+            ...snapshots,
+          ];
+          renderSnapshots();
+        }
+      }
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn && rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c && c.resize()));
+  </script>
+</body>
+</html>

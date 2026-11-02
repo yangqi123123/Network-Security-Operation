@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>攻防演练 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/security-ops.css">
+</head>
+<body class="secops-page drill-page list-workbench" data-menu-key="secops.drill" data-page-section="安全运营管理" data-page-title="攻防演练">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">关键字</span><input class="form-control" data-filter="keyword" placeholder="名称/负责人"></label>
+            <label class="form-field"><span class="form-label">场景</span><select class="form-control" data-filter="scene"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">状态</span><select class="form-control" data-filter="status"><option value="">全部</option></select></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">演练列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新建专项演练</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>演练名称</th><th>场景</th><th>状态</th><th>红方</th><th>蓝方</th><th>负责人</th><th>开始时间</th><th>关联摘要</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="drBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="drPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/secops-mock.js"></script>
+  <script>
+    const S = window.SecOps;
+    const RULE_POOL = ["RCE-Log4j", "Mail-Phish", "Ransom-Behavior", "Lateral-SMB", "DLP-Exfil", "DDoS-Threshold"];
+    const INTEL_POOL = ["IOC-Log4j", "Phish-Kit", "Ransom-Note", "AD-Abuse", "Sensitive-Tag"];
+    const PLAY_POOL = ["漏洞应急剧本", "钓鱼处置", "勒索隔离", "WebShell清理", "横向遏制", "外泄通报", "清洗牵引"];
+    const SETTLE_OPTS = ["检测规则", "响应剧本", "配置基线", "培训案例"];
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(kind, value) {
+      const t = S.tagOf(kind, value);
+      const cls = t.tagClass ? `tag ${t.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(t.label)}</span>`;
+    }
+
+    function summary(row) {
+      const n = (row.rulePacks?.length || 0) + (row.intelPacks?.length || 0) + (row.playbooks?.length || 0) + (row.knowledgeIds?.length || 0);
+      return `规则${row.rulePacks?.length || 0}/情报${row.intelPacks?.length || 0}/剧本${row.playbooks?.length || 0}/知识${row.knowledgeIds?.length || 0}（共${n}）`;
+    }
+
+    function fillSelect(key, list) {
+      const el = document.querySelector(`[data-filter="${key}"]`);
+      el.innerHTML = '<option value="">全部</option>' + list.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("drPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = S.listDrills({
+        keyword: f.keyword || undefined,
+        scene: f.scene || undefined,
+        status: f.status || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("drBody").innerHTML = rows.map((row) => `<tr>
+        <td>${dash(row.name)}</td>
+        <td>${dash(row.scene)}</td>
+        <td>${tagHtml("drillStatus", row.status)}</td>
+        <td>${dash(row.redTeam)}</td>
+        <td>${dash(row.blueTeam)}</td>
+        <td>${dash(row.owner)}</td>
+        <td>${dash(row.startAt)}</td>
+        <td>${esc(summary(row))}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          <button class="table-action" type="button" data-row="link" data-id="${esc(row.id)}">关联资源</button>
+          <button class="table-action" type="button" data-row="archive" data-id="${esc(row.id)}">复盘归档</button>
+          <button class="table-action" type="button" data-row="settle" data-id="${esc(row.id)}">沉淀转化</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = S.getDrill(id);
+      if (!row) return;
+      const kn = (row.knowledgeIds || []).map((kid) => S.getKnowledge(kid)?.title || kid).join("、") || "-";
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("演练名称", dash(row.name))}
+            ${infoItem("场景", dash(row.scene))}
+            ${infoItem("状态", tagHtml("drillStatus", row.status))}
+            ${infoItem("红方", dash(row.redTeam))}
+            ${infoItem("蓝方", dash(row.blueTeam))}
+            ${infoItem("负责人", dash(row.owner))}
+            ${infoItem("开始时间", dash(row.startAt))}
+            ${infoItem("规则包", dash((row.rulePacks || []).join("、")))}
+            ${infoItem("情报包", dash((row.intelPacks || []).join("、")))}
+            ${infoItem("剧本模板", dash((row.playbooks || []).join("、")))}
+            ${infoItem("关联知识", dash(kn))}
+            ${infoItem("已沉淀", dash((row.settled || []).join("、")))}
+            ${infoItem("复盘备注", dash(row.reviewNote))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "演练详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function opts(list, cur) {
+      return list.map((x) => `<option value="${esc(x)}" ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
+    }
+
+    function checks(pool, selected) {
+      const set = new Set((selected || []).map(String));
+      return pool.map((x) => `<label class="switch-line"><span>${esc(x)}</span><input type="checkbox" value="${esc(x)}" ${set.has(String(x)) ? "checked" : ""}></label>`).join("");
+    }
+
+    function openCreate() {
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">演练名称</span><input class="form-control" id="drName"></label>
+        <label class="form-field form-item"><span class="form-label">场景</span><select class="form-control" id="drScene">${opts(S.meta.drillScenes)}</select></label>
+        <label class="form-field form-item"><span class="form-label">状态</span><select class="form-control" id="drStatus">${opts(S.meta.drillStatuses, "筹划中")}</select></label>
+        <label class="form-field form-item"><span class="form-label">红方</span><input class="form-control" id="drRed"></label>
+        <label class="form-field form-item"><span class="form-label">蓝方</span><input class="form-control" id="drBlue"></label>
+        <label class="form-field form-item"><span class="form-label">负责人</span><input class="form-control" id="drOwner"></label>
+        <label class="form-field form-item"><span class="form-label">开始时间</span><input class="form-control" id="drStart" placeholder="2026-11-05 09:00:00"></label>`;
+      window.openAppDrawer({
+        title: "新建专项演练",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="create">确认</button>',
+      });
+    }
+
+    function openLink(id) {
+      const row = S.getDrill(id);
+      if (!row) return;
+      const knPool = S.listKnowledge().slice(0, 8).map((k) => ({ id: k.id, title: k.title }));
+      const body = `
+        <div class="detail-section"><h3 class="detail-title">规则包</h3><div id="linkRules">${checks(RULE_POOL, row.rulePacks)}</div></div>
+        <div class="detail-section"><h3 class="detail-title">情报包</h3><div id="linkIntel">${checks(INTEL_POOL, row.intelPacks)}</div></div>
+        <div class="detail-section"><h3 class="detail-title">剧本模板</h3><div id="linkPlay">${checks(PLAY_POOL, row.playbooks)}</div></div>
+        <div class="detail-section"><h3 class="detail-title">知识条目</h3><div id="linkKn">${knPool.map((k) => `<label class="switch-line"><span>${esc(k.title)}</span><input type="checkbox" value="${esc(k.id)}" ${(row.knowledgeIds || []).map(String).includes(String(k.id)) ? "checked" : ""}></label>`).join("")}</div></div>`;
+      window.openAppDrawer({
+        title: "关联资源",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="link" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function openArchive(id) {
+      window.openAppDrawer({
+        title: "复盘归档",
+        body: `<label class="form-field form-item"><span class="form-label">复盘备注</span><textarea class="form-control textarea" id="drNote"></textarea></label>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="archive" data-id="${esc(id)}">确认归档</button>`,
+      });
+    }
+
+    function openSettle(id) {
+      const row = S.getDrill(id);
+      window.openAppDrawer({
+        title: "沉淀转化",
+        body: `<div id="settleBox">${checks(SETTLE_OPTS, row?.settled)}</div>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="settle" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function checkedValues(rootId) {
+      return [...document.querySelectorAll(`#${rootId} input:checked`)].map((el) => el.value);
+    }
+
+    fillSelect("scene", S.meta.drillScenes);
+    fillSelect("status", S.meta.drillStatuses);
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1; render();
+      }
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "create") openCreate();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        const mode = rowBtn.dataset.row;
+        if (mode === "detail") openDetail(id);
+        if (mode === "link") openLink(id);
+        if (mode === "archive") openArchive(id);
+        if (mode === "settle") openSettle(id);
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (submit) {
+        const mode = submit.dataset.drawerSubmit;
+        const id = submit.dataset.id;
+        if (mode === "create") {
+          const name = document.getElementById("drName")?.value.trim();
+          if (!name) { alert("请填写演练名称"); return; }
+          S.saveDrill({
+            name,
+            scene: document.getElementById("drScene").value,
+            status: document.getElementById("drStatus").value,
+            redTeam: document.getElementById("drRed").value.trim() || "-",
+            blueTeam: document.getElementById("drBlue").value.trim() || "-",
+            owner: document.getElementById("drOwner").value.trim() || "-",
+            startAt: document.getElementById("drStart").value.trim() || new Date().toISOString().slice(0, 19).replace("T", " "),
+          });
+        }
+        if (mode === "link") {
+          S.linkDrillResources(id, {
+            rulePacks: checkedValues("linkRules"),
+            intelPacks: checkedValues("linkIntel"),
+            playbooks: checkedValues("linkPlay"),
+            knowledgeIds: checkedValues("linkKn").map(Number),
+          });
+        }
+        if (mode === "archive") S.archiveDrill(id, document.getElementById("drNote")?.value.trim());
+        if (mode === "settle") S.settleDrill(id, checkedValues("settleBox"));
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      if (event.target.closest("[data-page-action='prev']") && currentPage > 1) { currentPage -= 1; render(); }
+      if (event.target.closest("[data-page-action='next']")) {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

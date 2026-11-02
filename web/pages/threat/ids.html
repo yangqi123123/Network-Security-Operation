@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>入侵检测监控 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/threat.css">
+</head>
+<body class="threat-page ids-page" data-menu-key="threat.ids" data-page-section="威胁监测与响应" data-page-title="入侵检测监控">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <div class="content-tabs" role="tablist">
+          <button class="tab active" type="button" data-tab="devices">检测防护设备</button>
+          <button class="tab" type="button" data-tab="attacks">攻击告警列表</button>
+        </div>
+
+        <div id="panel-devices" class="threat-tab-panel">
+          <section class="card filters" id="deviceFilters">
+            <div class="filter-actions">
+              <label class="form-field"><span class="form-label">设备类型</span>
+                <select class="form-control" data-filter="type"><option value="">全部</option></select>
+              </label>
+              <label class="form-field"><span class="form-label">健康状态</span>
+                <select class="form-control" data-filter="health">
+                  <option value="">全部</option>
+                  <option>正常</option>
+                  <option>告警</option>
+                  <option>异常</option>
+                </select>
+              </label>
+              <label class="form-field"><span class="form-label">关键字</span>
+                <input class="form-control" data-filter="keyword" placeholder="设备名/IP">
+              </label>
+              <button class="btn btn-secondary" type="button" data-action="reset-device">重置</button>
+              <button class="btn btn-primary" type="button" data-action="search-device">搜索</button>
+            </div>
+          </section>
+
+          <section class="card user-list-card">
+            <div class="card-title-row user-toolbar">
+              <h2 class="card-title">检测防护设备</h2>
+              <div class="btn-row">
+                <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table user-table table-actions-sticky">
+                <thead>
+                  <tr>
+                    <th>设备名</th><th>类型</th><th>IP</th><th>策略命中</th><th>阻断状态</th><th>健康</th><th>最近心跳</th><th class="user-actions-col">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="deviceBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="panel-attacks" class="threat-tab-panel panel-hidden">
+          <section class="card filters" id="attackFilters">
+            <div class="filter-actions">
+              <label class="form-field"><span class="form-label">攻击类型</span>
+                <select class="form-control" data-filter="attackType"><option value="">全部</option></select>
+              </label>
+              <label class="form-field"><span class="form-label">状态</span>
+                <select class="form-control" data-filter="status">
+                  <option value="">全部</option>
+                  <option>未处置</option>
+                  <option>待联动</option>
+                  <option>已处置</option>
+                </select>
+              </label>
+              <label class="form-field"><span class="form-label">关键字</span>
+                <input class="form-control" data-filter="keyword" placeholder="源/目的/编号">
+              </label>
+              <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+              <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+            </div>
+          </section>
+
+          <section class="card user-list-card">
+            <div class="card-title-row user-toolbar">
+              <h2 class="card-title">攻击告警列表</h2>
+              <div class="btn-row">
+                <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+                <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table user-table table-actions-sticky">
+                <thead>
+                  <tr>
+                    <th>时间</th><th>攻击类型</th><th>源地址</th><th>目的地址</th><th>设备</th><th>动作</th><th>状态</th><th class="user-actions-col">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="attackBody"></tbody>
+              </table>
+            </div>
+            <div class="pagination" id="attackPager"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/threat-mock.js"></script>
+  <script>
+    const T = window.Threat;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    const tagHtml = (meta) => {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    };
+    const infoItem = (label, value) => `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    let tab = "devices";
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function switchTab(next) {
+      tab = next;
+      document.querySelectorAll(".content-tabs .tab").forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
+      document.getElementById("panel-devices").classList.toggle("panel-hidden", tab !== "devices");
+      document.getElementById("panel-attacks").classList.toggle("panel-hidden", tab !== "attacks");
+      render();
+    }
+
+    function renderDevices() {
+      const f = Object.fromEntries([...document.querySelectorAll("#deviceFilters [data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      const rows = T.listDevices({
+        type: f.type || undefined,
+        health: f.health || undefined,
+        keyword: f.keyword || undefined,
+      });
+      document.getElementById("deviceBody").innerHTML = rows.map((d) => `<tr>
+        <td>${dash(d.name)}</td><td>${dash(d.type)}</td><td>${dash(d.ip)}</td><td>${dash(d.policyHits)}</td>
+        <td>${dash(d.blockStatus)}</td><td>${tagHtml(T.healthTag(d.health))}</td><td>${dash(d.lastHeartbeat)}</td>
+        <td class="user-actions-col"><button class="table-action" type="button" data-row="device-detail" data-id="${esc(d.id)}">详情</button></td>
+      </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("attackPager").innerHTML = html;
+    }
+
+    function renderAttacks() {
+      const f = Object.fromEntries([...document.querySelectorAll("#attackFilters [data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      filtered = T.listAttacks({
+        attackType: f.attackType || undefined,
+        status: f.status || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("attackBody").innerHTML = rows.map((a) => {
+        const device = T.getDevice(a.deviceId);
+        const statusTag = a.status === "已处置" ? { label: a.status, tagClass: "success" } : { label: a.status, tagClass: "warning" };
+        return `<tr>
+          <td>${dash(a.time)}</td><td>${dash(a.attackType)}</td><td>${dash(a.src)}</td><td>${dash(a.dst)}</td>
+          <td>${dash(device?.name)}</td><td>${dash(a.action)}</td><td>${tagHtml(statusTag)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="attack-detail" data-id="${esc(a.id)}">详情</button>
+            <button class="table-action" type="button" data-row="link" data-id="${esc(a.id)}">联动处置</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function render() {
+      if (tab === "devices") renderDevices();
+      else renderAttacks();
+    }
+
+    function openDeviceDetail(id) {
+      const d = T.getDevice(id);
+      if (!d) return;
+      const body = `<section class="detail-section"><h3 class="detail-title">基础信息</h3><div class="detail-grid user-detail-grid">
+        ${infoItem("设备名称", dash(d.name))}${infoItem("类型", dash(d.type))}${infoItem("IP", dash(d.ip))}
+        ${infoItem("策略命中", dash(d.policyHits))}${infoItem("阻断状态", dash(d.blockStatus))}
+        ${infoItem("健康", tagHtml(T.healthTag(d.health)))}${infoItem("最近心跳", dash(d.lastHeartbeat))}
+        ${infoItem("备注信息", "-")}
+      </div></section>`;
+      window.openAppDrawer({ title: "设备详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openAttackDetail(id) {
+      const a = T.getAttack(id);
+      if (!a) return;
+      const body = `<section class="detail-section"><h3 class="detail-title">基础信息</h3><div class="detail-grid user-detail-grid">
+        ${infoItem("告警编号", dash(a.id))}${infoItem("时间", dash(a.time))}${infoItem("攻击类型", dash(a.attackType))}
+        ${infoItem("源地址", dash(a.src))}${infoItem("目的地址", dash(a.dst))}
+        ${infoItem("设备", dash(a.deviceName))}${infoItem("设备类型", dash(a.deviceType))}
+        ${infoItem("动作", dash(a.action))}${infoItem("状态", dash(a.status))}${infoItem("备注信息", "-")}
+      </div></section>`;
+      window.openAppDrawer({ title: "攻击告警详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openLink(id) {
+      const actions = ["封禁", "阻断", "隔离", "加白", "策略调整", "工单派发"];
+      const body = `<div class="form-item"><span class="form-label form-required">联动动作</span>
+        <div class="threat-sys-tags" style="margin-top:8px">${actions.map((a) => `<label><input type="checkbox" data-act="${esc(a)}"> ${esc(a)}</label>`).join("")}</div></div>
+        <label class="form-field form-item"><span class="form-label">备注</span><textarea class="form-control textarea" data-f="remark"></textarea></label>`;
+      window.openAppDrawer({
+        title: "联动处置",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-confirm-link="${esc(id)}">确认</button>`,
+      });
+    }
+
+    document.querySelector("#deviceFilters [data-filter='type']").innerHTML = '<option value="">全部</option>' + T.DEVICE_TYPES.map((v) => `<option>${esc(v)}</option>`).join("");
+    document.querySelector("#attackFilters [data-filter='attackType']").innerHTML = '<option value="">全部</option>' + T.ATTACK_TYPES.map((v) => `<option>${esc(v)}</option>`).join("");
+    switchTab("devices");
+
+    document.addEventListener("click", (event) => {
+      const tabBtn = event.target.closest("[data-tab]");
+      if (tabBtn) switchTab(tabBtn.dataset.tab);
+
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search" || action === "search-device") { currentPage = 1; render(); }
+      if (action === "reset") { document.querySelectorAll("#attackFilters [data-filter]").forEach((el) => { el.value = ""; }); currentPage = 1; render(); }
+      if (action === "reset-device") { document.querySelectorAll("#deviceFilters [data-filter]").forEach((el) => { el.value = ""; }); render(); }
+      if (action === "refresh") render();
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "device-detail") openDeviceDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "attack-detail") openAttackDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "link") openLink(rowBtn.dataset.id);
+      }
+
+      const confirm = event.target.closest("[data-confirm-link]");
+      if (confirm) {
+        const drawer = document.querySelector(".drawer-body") || document.getElementById("drawerBody");
+        const actions = [...(drawer?.querySelectorAll("[data-act]:checked") || [])].map((el) => el.dataset.act);
+        const remark = drawer?.querySelector("[data-f='remark']")?.value || "";
+        T.linkAction(confirm.dataset.confirmLink, { actions, remark });
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

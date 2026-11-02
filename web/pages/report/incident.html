@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>事件与合规报表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/report.css">
+</head>
+<body class="report-page" data-menu-key="report.incident" data-page-section="报表管理" data-page-title="事件与合规报表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters rpt-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">时间范围</span>
+              <select class="form-control" data-filter="range">
+                <option value="24h">近 24 小时</option>
+                <option value="7d" selected>近 7 天</option>
+                <option value="30d">近 30 天</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+          </div>
+        </section>
+
+        <h2 class="rpt-section-title">事件处置</h2>
+        <section class="rpt-metrics" id="evtMetrics"></section>
+
+        <section class="rpt-chart-grid">
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">严重等级分布</h2></div>
+            <div class="rpt-chart-el" id="cSev"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">发现来源</h2></div>
+            <div class="rpt-chart-el" id="cSrc"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">处置时效趋势</h2></div>
+            <div class="rpt-chart-el" id="cResp"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">关闭状态</h2></div>
+            <div class="rpt-chart-el" id="cClose"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">安全事件清单</h2>
+            <div class="btn-row">
+              <input class="form-control" style="width:180px" data-filter="keyword" placeholder="编号 / 类型 / 资产">
+              <select class="form-control" style="width:120px" data-filter="status">
+                <option value="">全部状态</option>
+                <option>研判中</option>
+                <option>处置中</option>
+                <option>已关闭</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>事件编号</th><th>类型</th><th>等级</th><th>来源</th><th>影响资产</th><th>责任部门</th><th>响应时长</th><th>关闭状态</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="rptBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <h2 class="rpt-section-title">合规性</h2>
+        <div class="rpt-compliance-block">
+          <section class="rpt-metrics cols-5" id="cmpMetrics"></section>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">合规检查项完成情况</h2></div>
+            <div class="rpt-chart-el" id="cCompliance"></div>
+          </article>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/report-mock.js"></script>
+  <script>
+    const charts = {};
+    let rowsCache = [];
+    const C = { primary: "#1476FF", red: "#F53F57", yellow: "#F7BA1E", green: "#14C9BA", purple: "#9359E3" };
+
+    function levelTag(level) {
+      const cls = level === "特别重大" || level === "重大" ? "danger" : level === "较大" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+    function statusTag(status) {
+      const cls = status === "已关闭" ? "success" : status === "处置中" ? "warning" : "danger";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+    function ensure(id, key) {
+      if (!charts[key]) charts[key] = echarts.init(document.getElementById(id));
+      return charts[key];
+    }
+
+    function openDetail(item) {
+      window.openAppDrawer({
+        title: "事件详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">事件编号</span><span class="info-value">${item.no || "-"}</span></div>
+            <div class="info-item"><span class="info-label">类型</span><span class="info-value">${item.type || "-"}</span></div>
+            <div class="info-item"><span class="info-label">严重等级</span><span class="info-value">${levelTag(item.level)}</span></div>
+            <div class="info-item"><span class="info-label">发现来源</span><span class="info-value">${item.source || "-"}</span></div>
+            <div class="info-item"><span class="info-label">影响资产</span><span class="info-value">${item.asset || "-"}</span></div>
+            <div class="info-item"><span class="info-label">责任部门</span><span class="info-value">${item.dept || "-"}</span></div>
+            <div class="info-item"><span class="info-label">响应时长</span><span class="info-value">${item.responseMin != null ? item.responseMin + " 分钟" : "-"}</span></div>
+            <div class="info-item"><span class="info-label">关闭状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+            <div class="info-item"><span class="info-label">处置过程</span><span class="info-value">${item.process || "-"}</span></div>
+            <div class="info-item"><span class="info-label">证据附件</span><span class="info-value">${item.evidence || "-"}</span></div>
+            <div class="info-item"><span class="info-label">复盘结论</span><span class="info-value">${item.review || "-"}</span></div>
+            <div class="info-item"><span class="info-label">改进措施</span><span class="info-value">${item.improvement || "-"}</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function renderRows(rows) {
+      const kw = (document.querySelector('[data-filter="keyword"]').value || "").trim();
+      const st = document.querySelector('[data-filter="status"]').value;
+      const list = rows.filter((r) => {
+        if (st && r.status !== st) return false;
+        if (kw && !`${r.no}${r.type}${r.asset}`.includes(kw)) return false;
+        return true;
+      });
+      document.getElementById("rptBody").innerHTML = list.map((r) => `
+        <tr data-id="${r.id}">
+          <td><strong>${r.no}</strong></td>
+          <td>${r.type}</td>
+          <td>${levelTag(r.level)}</td>
+          <td>${r.source}</td>
+          <td>${r.asset}</td>
+          <td>${r.dept || "-"}</td>
+          <td>${r.responseMin != null ? r.responseMin + " 分钟" : "-"}</td>
+          <td>${statusTag(r.status)}</td>
+          <td><button class="table-action" type="button" data-detail="${r.id}">详情</button></td>
+        </tr>`).join("") || `<tr><td colspan="9" class="text-center status-muted">暂无数据</td></tr>`;
+    }
+
+    function paint(range) {
+      const data = window.ReportMock.getIncident(range);
+      rowsCache = data.rows || [];
+
+      document.getElementById("evtMetrics").innerHTML = data.eventKpis.map((k) =>
+        `<div class="rpt-metric"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub || ""}</div></div>`
+      ).join("");
+
+      document.getElementById("cmpMetrics").innerHTML = data.complianceKpis.map((k) =>
+        `<div class="rpt-metric"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub || ""}</div></div>`
+      ).join("");
+
+      ensure("cSev", "sev").setOption({
+        color: [C.red, "#F53F57", C.yellow, C.green],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "pie", radius: ["40%", "68%"],
+          data: data.severity.map((d) => ({ name: d.name, value: d.value })),
+        }],
+      });
+
+      ensure("cSrc", "src").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 48 },
+        xAxis: { type: "category", data: data.sources.map((d) => d.name), axisLabel: { rotate: 20 } },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", barWidth: 28, data: data.sources.map((d) => d.value) }],
+      });
+
+      ensure("cResp", "resp").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.responseTrend.labels },
+        yAxis: { type: "value", name: "分钟" },
+        series: [{ type: "line", smooth: true, data: data.responseTrend.avgMin, areaStyle: { opacity: 0.1 } }],
+      });
+
+      ensure("cClose", "close").setOption({
+        color: [C.green, C.yellow],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "pie", radius: ["42%", "68%"],
+          data: data.closeStatus.map((d) => ({ name: d.name, value: d.value })),
+        }],
+      });
+
+      ensure("cCompliance", "compliance").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis", formatter: (p) => `${p[0].name}: ${p[0].value}%` },
+        grid: { left: 48, right: 16, top: 24, bottom: 28 },
+        xAxis: { type: "category", data: data.complianceBars.map((d) => d.name) },
+        yAxis: { type: "value", max: 100, axisLabel: { formatter: "{value}%" } },
+        series: [{ type: "bar", barWidth: 36, data: data.complianceBars.map((d) => d.value), itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+      });
+
+      renderRows(rowsCache);
+    }
+
+    function currentRange() {
+      return document.querySelector('[data-filter="range"]').value || "7d";
+    }
+
+    paint(currentRange());
+
+    document.querySelector('[data-action="search"]').addEventListener("click", () => paint(currentRange()));
+    document.querySelector('[data-action="reset"]').addEventListener("click", () => {
+      document.querySelector('[data-filter="range"]').value = "7d";
+      document.querySelector('[data-filter="keyword"]').value = "";
+      document.querySelector('[data-filter="status"]').value = "";
+      paint("7d");
+    });
+    document.querySelector('[data-filter="keyword"]').addEventListener("input", () => renderRows(rowsCache));
+    document.querySelector('[data-filter="status"]').addEventListener("change", () => renderRows(rowsCache));
+
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-detail]");
+      if (!btn) return;
+      const item = rowsCache.find((r) => String(r.id) === String(btn.dataset.detail));
+      if (item) openDetail(item);
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c && c.resize()));
+  </script>
+</body>
+</html>

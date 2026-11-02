@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>权限异常审计 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/access-control.css">
+</head>
+<body class="ac-page" data-menu-key="access.audit" data-page-section="访问控制管理" data-page-title="权限异常审计">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="acAuditMetrics">
+          <article class="metric-card"><div class="metric-label">审计账号数</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">高危账号</div><div class="metric-number" data-m="highRisk">0</div></article>
+          <article class="metric-card"><div class="metric-label">闲置待清理</div><div class="metric-number" data-m="idlePending">0</div></article>
+          <article class="metric-card"><div class="metric-label">今日异常登录</div><div class="metric-number" data-m="todayAnomaly">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">账号类型</span>
+              <select class="form-control" data-filter="accountType"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">账号状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="active">正常</option>
+                <option value="disabled">停用</option>
+                <option value="locked">已锁定</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">风险等级</span>
+              <select class="form-control" data-filter="riskLevel">
+                <option value="">全部</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">异常类型</span>
+              <select class="form-control" data-filter="anomalyType"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">所属用户组</span>
+              <select class="form-control" data-filter="group"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="账号名">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">账号权限审计</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-secondary" type="button" data-action="idle"><i class="fa-solid fa-broom"></i> 闲置清理提醒</button>
+              <button class="btn btn-primary" type="button" data-action="check"><i class="fa-solid fa-clipboard-check"></i> 权限核查</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>账号</th><th>类型</th><th>所属用户/组</th><th>角色权限摘要</th><th>启停状态</th>
+                  <th>最近登录</th><th>登录来源</th><th>风险等级</th><th>异常标记</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="acAuditBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="acAuditPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/access-control-mock.js"></script>
+  <script>
+    const AC = window.AccessControl;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label || meta.label === "无") return `<span class="info-value">${esc(meta?.label || "-")}</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function fillSelects() {
+      const typeSel = document.querySelector("[data-filter='accountType']");
+      typeSel.innerHTML = '<option value="">全部</option>' + Object.entries(AC.ACCOUNT_TYPE_LABEL).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const anomalySel = document.querySelector("[data-filter='anomalyType']");
+      anomalySel.innerHTML = '<option value="">全部</option>' + Object.entries(AC.ANOMALY_TYPES).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+      const groupSel = document.querySelector("[data-filter='group']");
+      groupSel.innerHTML = '<option value="">全部</option>' + AC.listDeptGroups().map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = AC.auditMetrics();
+      document.querySelectorAll("#acAuditMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("acAuditPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = AC.listAccounts({
+        accountType: f.accountType || undefined,
+        status: f.status || undefined,
+        riskLevel: f.riskLevel || undefined,
+        anomalyType: f.anomalyType || undefined,
+        group: f.group || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("acAuditBody").innerHTML = pageRows.map((row) => {
+        return `<tr data-id="${esc(row.id)}">
+          <td><div>${dash(row.account)}</div><div style="font-size:12px;color:var(--text-secondary)">${dash(row.displayName)}</div></td>
+          <td>${esc(AC.accountTypeLabel(row.accountType))}</td>
+          <td>${dash(row.group)}</td>
+          <td>${dash(row.roles)}</td>
+          <td>${tagHtml(AC.accountStatusTag(row.status))}</td>
+          <td>${dash(row.lastLoginAt)}</td>
+          <td>${dash(row.loginSource)}</td>
+          <td>${tagHtml(AC.riskTag(row.riskLevel))}</td>
+          <td>${row.anomalyType ? esc(AC.anomalyTypeLabel(row.anomalyType)) : "-"}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            <button class="table-action" type="button" data-row="dispose" data-id="${esc(row.id)}">处置</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = AC.getAccount(id);
+      if (!row) return;
+      const logins = AC.listRecentLogins(id, 10);
+      const ops = AC.listSensitiveOps(id, 10);
+      const loginTable = logins.length
+        ? `<table class="ac-sub-table"><thead><tr><th>时间</th><th>来源</th><th>结果</th><th>客户端</th></tr></thead><tbody>${logins.map((l) => `<tr><td>${dash(l.time)}</td><td>${dash(l.source)}</td><td>${dash(l.result)}</td><td>${dash(l.client)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="ac-sub-empty">暂无登录记录</div>`;
+      const opsTable = ops.length
+        ? `<table class="ac-sub-table"><thead><tr><th>时间</th><th>动作</th><th>对象</th><th>结果</th></tr></thead><tbody>${ops.map((o) => `<tr><td>${dash(o.time)}</td><td>${dash(o.action)}</td><td>${dash(o.target)}</td><td>${dash(o.result)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="ac-sub-empty">暂无敏感操作</div>`;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("账号", dash(row.account))}
+            ${infoItem("显示名称", dash(row.displayName))}
+            ${infoItem("账号类型", esc(AC.accountTypeLabel(row.accountType)))}
+            ${infoItem("所属用户组", dash(row.group))}
+            ${infoItem("角色权限", dash(row.roles))}
+            ${infoItem("访问对象", dash(row.accessTargets))}
+            ${infoItem("启停状态", tagHtml(AC.accountStatusTag(row.status)))}
+            ${infoItem("风险等级", tagHtml(AC.riskTag(row.riskLevel)))}
+            ${infoItem("异常类型", row.anomalyType ? esc(AC.anomalyTypeLabel(row.anomalyType)) : "-")}
+            ${infoItem("处置状态", tagHtml(AC.accountHandleTag(row.handleStatus)))}
+            ${infoItem("最近登录", dash(row.lastLoginAt))}
+            ${infoItem("登录来源", dash(row.loginSource))}
+            ${infoItem("登录结果", dash(row.loginResult))}
+            ${infoItem("权限变更时间", dash(row.lastPermissionChangeAt))}
+            ${infoItem("是否闲置", row.idle ? "是" : "否")}
+            ${infoItem("权限备注", dash(row.privilegeNote))}
+          </div>
+        </section>
+        <section class="detail-section ac-detail-subsection">
+          <h3 class="detail-title">最近登录</h3>
+          ${loginTable}
+        </section>
+        <section class="detail-section ac-detail-subsection">
+          <h3 class="detail-title">敏感操作</h3>
+          ${opsTable}
+        </section>`;
+      window.openAppDrawer({ title: "账号审计详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openDispose(id) {
+      const row = AC.getAccount(id);
+      if (!row) return;
+      const anomalyOpts = '<option value="">无</option>' + Object.entries(AC.ANOMALY_TYPES).map(([k, v]) => `<option value="${esc(k)}" ${row.anomalyType === k ? "selected" : ""}>${esc(v)}</option>`).join("");
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">处置动作</span>
+          <select class="form-control" id="audAction">
+            <option value="lock">锁定账号</option>
+            <option value="force_pwd">强制改密</option>
+            <option value="block_session">阻断会话</option>
+            <option value="review">发起审批复核</option>
+            <option value="temp_expire">临时授权到期提醒</option>
+          </select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">异常原因</span>
+          <select class="form-control" id="audAnomaly">${anomalyOpts}</select>
+        </label>
+        <label class="form-field form-item"><span class="form-label">备注</span>
+          <textarea class="form-control textarea" id="audRemark" placeholder="请输入"></textarea>
+        </label>`;
+      window.openAppDrawer({
+        title: "账号处置",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="dispose" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function openCheck() {
+      const body = `
+        <div class="ac-check-list">
+          <label class="ac-check-item"><input type="checkbox" name="acCheck" value="inventory" checked> 权限清单核查</label>
+          <label class="ac-check-item"><input type="checkbox" name="acCheck" value="idle" checked> 闲置账号清理</label>
+          <label class="ac-check-item"><input type="checkbox" name="acCheck" value="admin_review"> 管理员账号复核</label>
+          <label class="ac-check-item"><input type="checkbox" name="acCheck" value="least_privilege"> 最小权限检查</label>
+          <label class="ac-check-item"><input type="checkbox" name="acCheck" value="temp_expire"> 临时授权到期提醒</label>
+        </div>
+        <div class="ac-result-box" id="acCheckResult" style="display:none"></div>`;
+      window.openAppDrawer({
+        title: "权限核查",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="check">开始核查</button>',
+      });
+    }
+
+    fillSelects();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "refresh") render();
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "idle") {
+        const n = AC.markIdleCleanup();
+        alert(`已对 ${n} 个闲置账号标记待处置。`);
+        render();
+      }
+      if (action === "check") openCheck();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "dispose") openDispose(rowBtn.dataset.id);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "dispose") {
+        AC.disposeAccount(submit.dataset.id, {
+          action: document.getElementById("audAction").value,
+          anomalyType: document.getElementById("audAnomaly").value || undefined,
+          remark: document.getElementById("audRemark").value.trim(),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+      if (submit.dataset.drawerSubmit === "check") {
+        const checks = [...document.querySelectorAll("input[name='acCheck']:checked")].map((el) => el.value);
+        if (!checks.length) { alert("请至少选择一项核查"); return; }
+        const result = AC.runAuditCheck({ checks });
+        const box = document.getElementById("acCheckResult");
+        if (box) {
+          box.style.display = "block";
+          box.textContent = `${result.ranAt}\n${result.summary}\n` + result.hits.map((h) => `- ${h.label}: ${h.count}（样例：${(h.sampleAccounts || []).join("、") || "-"}）`).join("\n");
+        }
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

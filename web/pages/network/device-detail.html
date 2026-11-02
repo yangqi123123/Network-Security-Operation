@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备详情 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body class="fault-page" data-menu-key="network.fault" data-page-section="网络管理" data-page-title="设备详情">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack fault-screen">
+        <section class="fault-banner" id="deviceBanner"></section>
+
+        <section class="fault-card">
+          <div class="fault-basic-row">
+            <div class="fault-basic-form" id="basicInfo"></div>
+            <aside class="fault-ring-panel">
+              <div class="fault-ring-title">告警等级分布</div>
+              <div class="fault-ring-body">
+                <div class="fault-ring-chart" id="levelRing"></div>
+                <ul class="fault-ring-legend" id="levelLegend"></ul>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="fault-split-row">
+          <article class="fault-card">
+            <div class="fault-card-head">
+              <h3>设备告警</h3>
+              <a class="fault-text-link" href="../alarm-center/alarm-info.html">告警通知 &gt;</a>
+            </div>
+            <ul class="fault-alarm-timeline" id="deviceAlarms"></ul>
+          </article>
+          <article class="fault-card">
+            <div class="fault-card-head"><h3>关联事件</h3></div>
+            <ul class="fault-event-list" id="deviceEvents"></ul>
+          </article>
+        </section>
+
+        <section class="fault-card">
+          <div class="fault-card-head"><h3>PING 连通性</h3></div>
+          <div class="fault-ping-stats" id="pingStats"></div>
+          <div class="fault-ping-chart" id="pingChart"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script>
+    (function () {
+      const FA = window.FaultAlarm;
+      const params = new URLSearchParams(location.search);
+      const deviceId = params.get("id") || "";
+      const alarmId = Number(params.get("alarmId") || 0);
+      const ALL = FA.alarmsForFaultDisplay();
+
+      const related = ALL.filter((a) => {
+        if (deviceId && (a.deviceId === deviceId || a.deviceCode === deviceId || String(a.id) === deviceId)) return true;
+        if (params.get("name") && a.device === params.get("name")) return true;
+        return false;
+      });
+      const focus = related.find((a) => a.id === alarmId) || related[0] || ALL[0];
+      const deviceAlarms = related.length ? related : (focus ? [focus] : []);
+
+      const device = {
+        id: deviceId || focus?.deviceId || "DEV-UNKNOWN",
+        name: params.get("name") || focus?.device || "未知设备",
+        ip: params.get("ip") || focus?.ip || "-",
+        region: params.get("region") || focus?.region || "-",
+        layer: params.get("layer") || focus?.layer || "-",
+        probe: params.get("probe") || focus?.probe || "-",
+        type: focus?.category || "网络设备",
+        model: params.get("model") || focus?.deviceCode || "-",
+        mac: params.get("mac") || "-",
+        zone: params.get("zone") || focus?.domain || "-",
+        online: params.get("online") !== "0",
+      };
+
+      document.title = `${device.name} - 设备详情`;
+      document.body.dataset.pageTitle = "设备详情";
+
+      function esc(text) {
+        return String(text == null ? "" : text)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function levelColor(level) {
+        if (level === "告警") return "#F53F57";
+        if (level === "预警") return "#F7BA1E";
+        return "#5B83FF";
+      }
+
+      function levelCss(level) {
+        if (level === "告警") return "high";
+        if (level === "预警") return "medium";
+        return "low";
+      }
+
+      function renderBanner() {
+        document.getElementById("deviceBanner").innerHTML = `
+          <div class="fault-banner-main">
+            <div class="fault-banner-icon" aria-hidden="true"><i class="fa-solid fa-network-wired"></i></div>
+            <div class="fault-banner-copy">
+              <div class="fault-banner-title-row">
+                <h2 class="fault-banner-name">${esc(device.name)} <span class="fault-banner-ip">(${esc(device.ip)})</span></h2>
+                <span class="fault-online-tag ${device.online ? "" : "is-offline"}">${device.online ? "在线" : "离线"}</span>
+              </div>
+              <p class="fault-banner-meta">
+                设备类型：${esc(device.type)}
+                <span class="fault-meta-sep">区域：${esc(device.region)}</span>
+                <span class="fault-meta-sep">分层：${esc(device.layer)}</span>
+                <span class="fault-meta-sep">告警数：<strong class="fault-alarm-count">${deviceAlarms.length}</strong></span>
+              </p>
+            </div>
+          </div>
+          <a class="fault-text-link" href="./fault.html">返回故障显示 &gt;</a>`;
+      }
+
+      function field(label, value, editable) {
+        return `<div class="fault-field">
+          <div class="fault-field-label">${esc(label)}</div>
+          <div class="fault-field-value-row">
+            <div class="fault-field-value">${esc(value || "-")}</div>
+            ${editable ? '<button class="fault-edit-btn" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button>' : ""}
+          </div>
+        </div>`;
+      }
+
+      function renderBasic() {
+        document.getElementById("basicInfo").innerHTML = `
+          <div class="fault-form-col">
+            ${field("设备名称", device.name, true)}
+            ${field("IP 地址", device.ip)}
+            ${field("所属区域", device.region)}
+            ${field("网络分层", device.layer)}
+          </div>
+          <div class="fault-form-col">
+            ${field("监控探针", device.probe)}
+            ${field("设备型号", device.model)}
+            ${field("业务域", device.zone)}
+            ${field("MAC", device.mac || "-")}
+          </div>`;
+      }
+
+      function renderRing() {
+        const counts = { 告警: 0, 预警: 0, 提醒: 0 };
+        deviceAlarms.forEach((a) => { counts[a.level] = (counts[a.level] || 0) + 1; });
+        const data = Object.keys(counts).map((name) => ({ name, value: counts[name] }));
+        const colors = ["#F53F57", "#F7BA1E", "#5B83FF"];
+        const el = document.getElementById("levelRing");
+        if (window.echarts) {
+          const chart = echarts.init(el);
+          chart.setOption(FA.pieOption(data, colors));
+          window.addEventListener("resize", () => chart.resize());
+        } else {
+          el.innerHTML = '<div class="fault-ping-fallback">图表加载失败</div>';
+        }
+        document.getElementById("levelLegend").innerHTML = data.map((d, i) => `
+          <li><span class="dot" style="background:${colors[i]}"></span>${esc(d.name)} <strong>${d.value}</strong></li>
+        `).join("");
+      }
+
+      function renderAlarms() {
+        const list = document.getElementById("deviceAlarms");
+        if (!deviceAlarms.length) {
+          list.innerHTML = `<li class="fault-empty"><div class="fault-empty-art"></div>暂无告警</li>`;
+          return;
+        }
+        list.innerHTML = deviceAlarms.map((a) => `
+          <li class="fault-alarm-item" style="--level-color:${levelColor(a.level)}">
+            <div class="fault-alarm-axis">
+              <span class="fault-alarm-dot"></span>
+              <time>${esc(a.time)}</time>
+            </div>
+            <div class="fault-alarm-card">
+              <div class="fault-alarm-body">
+                <div class="fault-alarm-line1">
+                  <span class="alarm-level ${levelCss(a.level)}">${esc(a.level)}</span>
+                  <span>${esc(a.type || a.category)}</span>
+                  <span class="muted">${esc(a.probe || "")}</span>
+                </div>
+                <div class="fault-alarm-line2">${esc(a.message)}</div>
+              </div>
+              <div class="fault-alarm-actions">
+                <span class="fault-confirm-tag ${a.status === "已处理" ? "is-on" : ""}">${esc(a.status)}</span>
+              </div>
+            </div>
+          </li>
+        `).join("");
+      }
+
+      function renderEvents() {
+        const hist = (focus && focus.history) || [];
+        const list = document.getElementById("deviceEvents");
+        if (!hist.length) {
+          list.innerHTML = `<li class="fault-empty"><div class="fault-empty-art"></div>暂无关联事件</li>`;
+          return;
+        }
+        list.innerHTML = hist.map((h) => `
+          <li class="fault-event-item">
+            <div class="fault-event-time">${esc(h.time)}</div>
+            <div class="fault-event-card">
+              <div class="fault-event-line1">
+                <span class="fault-event-type">${esc(h.operator || "系统")}</span>
+                <span class="fault-event-result">处置记录</span>
+              </div>
+              <div class="fault-event-line3">${esc(h.action)}</div>
+            </div>
+          </li>
+        `).join("");
+      }
+
+      function renderPing() {
+        const loss = device.online ? 0 : 12;
+        const avg = device.online ? 18 : 96;
+        document.getElementById("pingStats").innerHTML = `
+          <div class="fault-ping-item"><span class="label">连通状态</span>
+            <span class="value"><i class="fault-status-dot ${device.online ? "ok" : "bad"}"></i>${device.online ? "可达" : "不可达"}</span></div>
+          <div class="fault-ping-item"><span class="label">丢包率</span><span class="value">${loss}%</span></div>
+          <div class="fault-ping-item"><span class="label">平均时延</span><span class="value">${avg} ms</span></div>
+          <div class="fault-ping-item"><span class="label">探针</span><span class="value">${esc(device.probe)}</span></div>`;
+
+        const times = ["14:00", "14:05", "14:10", "14:15", "14:20", "14:25", "14:30"];
+        const values = device.online
+          ? [16, 18, 15, 22, 17, 19, 18]
+          : [80, 95, 110, 88, 102, 97, 96];
+        const el = document.getElementById("pingChart");
+        if (window.echarts) {
+          const chart = echarts.init(el);
+          chart.setOption({
+            color: [device.online ? "#5B83FF" : "#F53F57"],
+            grid: { left: 44, right: 16, top: 28, bottom: 28 },
+            tooltip: { trigger: "axis" },
+            xAxis: {
+              type: "category",
+              data: times,
+              boundaryGap: false,
+              axisTick: { show: false },
+              axisLine: { lineStyle: { color: "#EDF1F7" } },
+              axisLabel: { color: "#86909C", fontSize: 10 },
+            },
+            yAxis: {
+              type: "value",
+              axisLabel: { color: "#86909C", fontSize: 10, formatter: "{value} ms" },
+              splitLine: { lineStyle: { color: "#EDF1F7" } },
+            },
+            series: [{
+              type: "line",
+              smooth: true,
+              data: values,
+              areaStyle: { opacity: 0.12 },
+            }],
+          });
+          window.addEventListener("resize", () => chart.resize());
+        } else {
+          el.innerHTML = '<div class="fault-ping-fallback">PING 图表不可用</div>';
+        }
+      }
+
+      renderBanner();
+      renderBasic();
+      renderRing();
+      renderAlarms();
+      renderEvents();
+      renderPing();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据库安全审计 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/data-security.css">
+</head>
+<body class="dsec-page" data-menu-key="data.db-audit" data-page-section="数据安全管理" data-page-title="数据库安全审计">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsecDbMetrics">
+          <article class="metric-card"><div class="metric-label">今日审计事件</div><div class="metric-number" data-m="today">0</div></article>
+          <article class="metric-card"><div class="metric-label">高危未处置</div><div class="metric-number" data-m="highPending">0</div></article>
+          <article class="metric-card"><div class="metric-label">敏感表访问</div><div class="metric-number" data-m="sensitiveTable">0</div></article>
+          <article class="metric-card"><div class="metric-label">异常登录</div><div class="metric-number" data-m="abnormalLogin">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <p class="dsec-filter-tip" id="labelFilterTip" hidden>已按敏感标签筛选 <a data-action="clear-label">清除</a></p>
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">风险类型</span>
+              <select class="form-control" data-filter="riskType"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">数据库实例</span>
+              <select class="form-control" data-filter="instance"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">账号</span>
+              <input class="form-control" data-filter="account" placeholder="账号关键字">
+            </label>
+            <label class="form-field"><span class="form-label">执行状态</span>
+              <select class="form-control" data-filter="execStatus">
+                <option value="">全部</option>
+                <option value="success">成功</option>
+                <option value="fail">失败</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">开始日期</span>
+              <input class="form-control" data-filter="dateFrom" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">结束日期</span>
+              <input class="form-control" data-filter="dateTo" placeholder="2026-11-01">
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="SQL/客户端/库表">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">审计事件列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>时间</th><th>实例</th><th>库表</th><th>账号</th><th>操作类型</th>
+                  <th>风险类型</th><th>执行状态</th><th>影响行数</th><th>客户端</th><th>处置状态</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsecDbBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsecDbPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/data-security-mock.js"></script>
+  <script>
+    const DS = window.DataSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+    const params = new URLSearchParams(location.search);
+    let labelIdFilter = params.get("labelId") || "";
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function riskTag(rt) {
+      const high = DS.HIGH_RISKS.has(rt);
+      return { label: rt || "-", tagClass: high ? "danger" : "warning" };
+    }
+
+    function execTag(st) {
+      return st === "success" ? { label: "成功", tagClass: "success" } : { label: "失败", tagClass: "danger" };
+    }
+
+    function fillFilters() {
+      const riskSel = document.querySelector("[data-filter='riskType']");
+      riskSel.innerHTML = '<option value="">全部</option>' + DS.RISK_TYPES.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+      const instances = [...new Set(DS.listDbAuditEvents().map((e) => e.instance))];
+      const instSel = document.querySelector("[data-filter='instance']");
+      instSel.innerHTML = '<option value="">全部</option>' + instances.map((i) => `<option value="${esc(i)}">${esc(i)}</option>`).join("");
+      document.getElementById("labelFilterTip").hidden = !labelIdFilter;
+    }
+
+    function readFilter() {
+      const f = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+      if (labelIdFilter) f.labelId = labelIdFilter;
+      return f;
+    }
+
+    function refreshMetrics() {
+      const m = DS.dbAuditMetrics();
+      document.querySelectorAll("#dsecDbMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsecDbPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = DS.listDbAuditEvents({
+        riskType: f.riskType || undefined,
+        instance: f.instance || undefined,
+        account: f.account || undefined,
+        execStatus: f.execStatus || undefined,
+        keyword: f.keyword || undefined,
+        dateFrom: f.dateFrom || undefined,
+        dateTo: f.dateTo || undefined,
+        labelId: f.labelId || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dsecDbBody").innerHTML = pageRows.map((row) => {
+        const canHandle = row.handleStatus === "pending" && DS.HIGH_RISKS.has(row.riskType);
+        const handleBtn = canHandle ? `<button class="table-action" type="button" data-row="handle" data-id="${esc(row.id)}">处置</button>` : "";
+        return `<tr>
+          <td>${dash(row.time)}</td>
+          <td>${dash(row.instance)}</td>
+          <td>${dash(row.db + "." + row.table)}</td>
+          <td>${dash(row.account)}</td>
+          <td>${dash(row.opType)}</td>
+          <td>${tagHtml(riskTag(row.riskType))}</td>
+          <td>${tagHtml(execTag(row.execStatus))}</td>
+          <td>${dash(row.rows)}</td>
+          <td>${dash(row.client)}</td>
+          <td>${tagHtml(DS.dbHandleTag(row.handleStatus))}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            ${handleBtn}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="11" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = DS.getDbAuditEvent(id);
+      if (!row) return;
+      const labels = (row.labelIds || []).map((lid) => {
+        const lb = DS.getLabel(lid);
+        const text = lb ? `${lb.category}(${DS.levelTag(lb.level).label})` : lid;
+        return `<a href="./classify.html?labelId=${encodeURIComponent(lid)}" style="color:var(--primary)">${esc(text)}</a>`;
+      }).join("、") || "-";
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">审计信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("时间", dash(row.time))}
+            ${infoItem("实例", dash(row.instance))}
+            ${infoItem("数据库", dash(row.db))}
+            ${infoItem("表", dash(row.table))}
+            ${infoItem("账号", dash(row.account))}
+            ${infoItem("操作类型", dash(row.opType))}
+            ${infoItem("风险类型", tagHtml(riskTag(row.riskType)))}
+            ${infoItem("执行状态", tagHtml(execTag(row.execStatus)))}
+            ${infoItem("影响行数", dash(row.rows))}
+            ${infoItem("客户端", dash(row.client))}
+            ${infoItem("客户端工具", dash(row.clientTool))}
+            ${infoItem("接入方式", dash(DS.INGEST_LABEL[row.ingest] || row.ingest))}
+            ${infoItem("敏感标签", labels)}
+            ${infoItem("识别依据", dash(row.detectBasis))}
+            ${infoItem("处置状态", tagHtml(DS.dbHandleTag(row.handleStatus)))}
+            ${infoItem("备注信息", dash(row.handleRemark))}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">SQL 语句</h3>
+          <pre class="dsec-sql">${esc(row.sql || "-")}</pre>
+        </section>
+        <section class="detail-section">
+          <h3 class="detail-title">返回摘要</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("返回结果", dash(row.resultSummary))}
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "审计事件详情",
+        subtitle: "数据安全管理 · 数据库安全审计",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>',
+      });
+    }
+
+    function openHandle(id) {
+      const row = DS.getDbAuditEvent(id);
+      if (!row) return;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">处置动作</h3>
+          <div class="form-item"><label class="form-label form-required">处置方式</label>
+            <select class="form-control" id="handleAction">
+              <option value="notified">告警通知</option>
+              <option value="ticket">工单派发</option>
+              <option value="frozen">账号冻结</option>
+              <option value="blocked">访问阻断</option>
+              <option value="ignored">忽略</option>
+            </select>
+          </div>
+          <div class="form-item"><label class="form-label">备注</label>
+            <textarea class="form-control textarea" id="handleRemark" placeholder="请输入处置说明"></textarea>
+          </div>
+        </section>`;
+      window.openAppDrawer({
+        title: "风险处置",
+        subtitle: row.riskType + " · " + row.account,
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" id="confirmHandle" data-id="${esc(id)}">确认</button>`,
+      });
+      setTimeout(() => {
+        document.getElementById("confirmHandle")?.addEventListener("click", () => {
+          DS.handleDbAuditEvent(id, {
+            action: document.getElementById("handleAction").value,
+            remark: document.getElementById("handleRemark").value.trim(),
+          });
+          document.querySelector("[data-drawer-close]")?.click();
+          render();
+        });
+      }, 0);
+    }
+
+    fillFilters();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        labelIdFilter = "";
+        document.getElementById("labelFilterTip").hidden = true;
+        history.replaceState(null, "", location.pathname);
+        currentPage = 1;
+        render();
+      }
+      if (action === "clear-label") {
+        labelIdFilter = "";
+        document.getElementById("labelFilterTip").hidden = true;
+        history.replaceState(null, "", location.pathname);
+        currentPage = 1;
+        render();
+      }
+      if (action === "refresh") render();
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "handle") openHandle(rowBtn.dataset.id);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

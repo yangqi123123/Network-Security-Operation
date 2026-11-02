@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>性能预警 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="user-page" data-menu-key="perf.alert" data-page-section="性能监测" data-page-title="性能预警">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">性能预警</h1>
+            <p class="page-desc">统一管理主机、网络、数据库、中间件的指标、取值间隔与阈值。</p>
+          </div>
+          <div class="btn-row"></div>
+        </section>
+
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">策略名</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">资源类型</span><select class="form-control" data-filter="resourceType"><option value="">请选择</option><option>主机</option><option>网络</option><option>数据库</option><option>中间件</option></select></label>
+            <label class="form-field"><span class="form-label">状态</span><select class="form-control" data-filter="status"><option value="">请选择</option><option>正常</option><option>停用</option></select></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">预警策略列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新增</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th class="check-cell"><input type="checkbox" data-select-all></th>
+                  <th>策略名</th><th>资源类型</th><th>指标</th><th>取值间隔</th><th>阈值</th><th>告警级别</th><th>状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="alertTableBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <span>共 <strong id="alertCount">0</strong> 条记录，每页 10 条</span>
+            <span class="page-item" data-page-action="prev">‹</span>
+            <span class="page-item active" data-page-number="1">1</span>
+            <span class="page-item" data-page-number="2">2</span>
+            <span class="page-item" data-page-action="next">›</span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/data/perf-mock.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script>
+    const rows = [...(window.PERF_DATA?.alerts || [])];
+    const body = document.getElementById("alertTableBody");
+    let filtered = rows;
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function byId(id) { return rows.find((r) => String(r.id) === String(id)) || rows[0]; }
+
+    function levelTag(level) {
+      if (level === "严重") return "danger";
+      if (level === "告警") return "warning";
+      return "";
+    }
+
+    function render(list = filtered) {
+      filtered = list;
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      body.innerHTML = pageRows.map((r) => `
+        <tr data-id="${r.id}">
+          <td class="check-cell"><input type="checkbox"></td>
+          <td>${r.name}</td><td>${r.resourceType}</td><td>${r.metric}</td><td>${r.interval}</td><td>${r.threshold}</td>
+          <td><span class="tag ${levelTag(r.level)}">${r.level}</span></td>
+          <td><button class="status-switch ${r.status === "正常" ? "on" : "off"}" type="button" data-toggle-status="${r.id}">${r.status}</button></td>
+          <td class="user-actions-col">
+            <button class="table-action" data-act="edit" data-id="${r.id}">编辑</button>
+            <button class="table-action status-danger" data-act="delete" data-id="${r.id}">删除</button>
+          </td>
+        </tr>`).join("");
+      document.getElementById("alertCount").textContent = filtered.length;
+      document.querySelectorAll("[data-page-number]").forEach((el) => el.classList.toggle("active", Number(el.dataset.pageNumber) === currentPage));
+    }
+
+    function openDrawer(mode, row = rows[0]) {
+      const isCreate = mode === "create";
+      const isDetail = mode === "detail";
+      const title = isCreate ? "新增预警策略" : isDetail ? "策略详情" : "编辑预警策略";
+      const bodyHtml = isDetail
+        ? `<section class="detail-section"><h3 class="detail-title">策略信息</h3><div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">策略名</span><span class="info-value">${row.name}</span></div>
+            <div class="info-item"><span class="info-label">资源类型</span><span class="info-value">${row.resourceType}</span></div>
+            <div class="info-item"><span class="info-label">指标</span><span class="info-value">${row.metric}</span></div>
+            <div class="info-item"><span class="info-label">取值间隔</span><span class="info-value">${row.interval}</span></div>
+            <div class="info-item"><span class="info-label">阈值</span><span class="info-value">${row.threshold}</span></div>
+            <div class="info-item"><span class="info-label">告警级别</span><span class="info-value"><span class="tag ${levelTag(row.level)}">${row.level}</span></span></div>
+            <div class="info-item"><span class="info-label">状态</span><span class="info-value"><span class="tag ${row.status === "正常" ? "success" : "danger"}">${row.status}</span></span></div>
+            <div class="info-item"><span class="info-label">备注</span><span class="info-value">${row.remark || "-"}</span></div>
+          </div></section>`
+        : `<div class="form-grid-2">
+            <label class="form-field form-item"><span class="form-label form-required">策略名</span><input class="form-control" value="${isCreate ? "" : row.name}" placeholder="请输入"></label>
+            <label class="form-field form-item"><span class="form-label form-required">资源类型</span><select class="form-control"><option>主机</option><option>网络</option><option>数据库</option><option>中间件</option></select></label>
+            <label class="form-field form-item"><span class="form-label form-required">指标</span><input class="form-control" value="${isCreate ? "" : row.metric}" placeholder="请输入"></label>
+            <label class="form-field form-item"><span class="form-label form-required">取值间隔</span><input class="form-control" value="${isCreate ? "60s" : row.interval}" placeholder="如 60s"></label>
+            <label class="form-field form-item"><span class="form-label form-required">阈值</span><input class="form-control" value="${isCreate ? "" : row.threshold}" placeholder="如 ≥ 85%"></label>
+            <label class="form-field form-item"><span class="form-label form-required">告警级别</span><select class="form-control"><option>提示</option><option>告警</option><option>严重</option></select></label>
+          </div>
+          <label class="form-field form-item"><span class="form-label">备注</span><textarea class="form-control textarea" placeholder="请输入">${isCreate ? "" : (row.remark || "")}</textarea></label>`;
+      window.openAppDrawer({
+        title,
+        body: bodyHtml,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>${isDetail ? "" : `<button class="btn btn-primary" type="button" data-drawer-close>确认</button>`}`,
+      });
+    }
+
+    render();
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "create") openDrawer("create");
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render(rows);
+      }
+      if (action === "search") {
+        const f = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value]));
+        currentPage = 1;
+        render(rows.filter((r) =>
+          (!f.name || r.name.includes(f.name)) &&
+          (!f.resourceType || r.resourceType === f.resourceType) &&
+          (!f.status || r.status === f.status)
+        ));
+      }
+      const toggle = event.target.closest("[data-toggle-status]");
+      if (toggle) {
+        const row = byId(toggle.dataset.toggleStatus);
+        row.status = row.status === "正常" ? "停用" : "正常";
+        render();
+        return;
+      }
+      const act = event.target.closest("[data-act]");
+      if (act) {
+        const row = byId(act.dataset.id);
+        if (act.dataset.act === "delete") {
+          window.openAppConfirm({
+            title: "提示",
+            message: `确认删除策略「${row.name}」吗？`,
+            onConfirm: () => {
+              const idx = rows.findIndex((item) => item.id === row.id);
+              if (idx >= 0) rows.splice(idx, 1);
+              currentPage = 1;
+              render(rows);
+            },
+          });
+          return;
+        }
+        openDrawer(act.dataset.act, row);
+      }
+      const pageNumber = event.target.closest("[data-page-number]");
+      const pageAction = event.target.closest("[data-page-action]");
+      if (pageNumber) { currentPage = Number(pageNumber.dataset.pageNumber); render(); }
+      if (pageAction) {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        currentPage = pageAction.dataset.pageAction === "prev" ? Math.max(1, currentPage - 1) : Math.min(totalPages, currentPage + 1);
+        render();
+      }
+      const tr = event.target.closest("#alertTableBody tr");
+      if (tr && !event.target.closest("button, input")) openDrawer("detail", byId(tr.dataset.id));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备图标 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/device-mgmt.css">
+</head>
+<body data-menu-key="device.icons" data-page-section="设备管理" data-page-title="设备图标">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters user-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">图标名称</span><input class="form-control" data-filter="name" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">资源大类</span>
+              <select class="form-control" data-filter="category">
+                <option value="">全部</option>
+                <option>三层交换机</option>
+                <option>二层交换机</option>
+                <option>路由器</option>
+                <option>防火墙</option>
+                <option>网闸</option>
+                <option>负载均衡</option>
+                <option>Windows服务器</option>
+                <option>Linux服务器</option>
+                <option>存储</option>
+                <option>数据库</option>
+                <option>中间件</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">图标库</h2>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新增图标</button>
+            </div>
+          </div>
+          <div class="dm-icon-grid" id="iconGrid"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/device-mgmt-mock.js"></script>
+  <script>
+    const DM = window.DeviceMgmt;
+    const ASSETS = [
+      "fa-solid fa-network-wired", "fa-solid fa-sitemap", "fa-solid fa-route",
+      "fa-solid fa-shield-halved", "fa-solid fa-door-closed", "fa-solid fa-scale-balanced",
+      "fa-brands fa-windows", "fa-brands fa-linux", "fa-solid fa-hard-drive",
+      "fa-solid fa-database", "fa-solid fa-cubes", "fa-solid fa-server"
+    ];
+    let filter = {};
+
+    function render() {
+      const list = DM.listIcons(filter);
+      const grid = document.getElementById("iconGrid");
+      if (!list.length) {
+        grid.innerHTML = `<div class="dm-empty" style="grid-column:1/-1">暂无图标</div>`;
+        return;
+      }
+      grid.innerHTML = list.map((row) => `
+        <article class="dm-icon-card" data-id="${row.id}">
+          <div class="dm-icon-thumb"><i class="${row.asset}"></i></div>
+          <h3>${row.name}</h3>
+          <div class="dm-icon-meta">
+            <span>${row.category}</span>
+            <span>引用 ${row.refCount}</span>
+            <span class="tag ${row.enabled ? "success" : "danger"}">${row.enabled ? "启用" : "停用"}</span>
+          </div>
+          <div class="dm-icon-actions">
+            <button class="table-action" type="button" data-icon-action="edit" data-id="${row.id}">编辑</button>
+            <button class="table-action" type="button" data-icon-action="toggle" data-id="${row.id}">${row.enabled ? "停用" : "启用"}</button>
+            <button class="table-action status-danger" type="button" data-icon-action="delete" data-id="${row.id}">删除</button>
+          </div>
+        </article>`).join("");
+    }
+
+    function openForm(row) {
+      const isCreate = !row;
+      const assetOpts = ASSETS.map((a) => `<option value="${a}" ${row && row.asset === a ? "selected" : ""}>${a}</option>`).join("");
+      window.openAppDrawer({
+        title: isCreate ? "新增图标" : "编辑图标",
+        body: `
+          <div class="form-grid-2">
+            <label class="form-field form-item"><span class="form-label form-required">名称</span>
+              <input class="form-control" data-field="name" value="${row ? row.name : ""}" placeholder="请输入"></label>
+            <label class="form-field form-item"><span class="form-label form-required">类型</span>
+              <select class="form-control" data-field="category">
+                ${["三层交换机","二层交换机","路由器","防火墙","网闸","负载均衡","Windows服务器","Linux服务器","存储","数据库","中间件"].map((c) =>
+                  `<option ${row && row.category === c ? "selected" : ""}>${c}</option>`).join("")}
+              </select></label>
+            <label class="form-field form-item"><span class="form-label">图标</span>
+              <select class="form-control" data-field="asset">${assetOpts}</select></label>
+            <label class="form-field form-item"><span class="form-label">状态</span>
+              <select class="form-control" data-field="enabled">
+                <option value="true" ${!row || row.enabled ? "selected" : ""}>启用</option>
+                <option value="false" ${row && !row.enabled ? "selected" : ""}>停用</option>
+              </select></label>
+          </div>
+          <label class="form-field form-item"><span class="form-label">备注</span>
+            <textarea class="form-control textarea" data-field="remark" placeholder="请输入">${row ? (row.remark || "") : ""}</textarea></label>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>
+          <button class="btn btn-primary" type="button" data-save-icon="${row ? row.id : ""}">确认</button>`,
+      });
+    }
+
+    document.addEventListener("click", (e) => {
+      const action = e.target.closest("[data-action]")?.dataset.action;
+      if (action === "create") openForm(null);
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        filter = {};
+        render();
+      }
+      if (action === "search") {
+        filter = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+        render();
+      }
+      const iconAct = e.target.closest("[data-icon-action]");
+      if (iconAct) {
+        const id = iconAct.dataset.id;
+        const row = DM.getIcon(id);
+        if (iconAct.dataset.iconAction === "edit") openForm(row);
+        if (iconAct.dataset.iconAction === "toggle") { DM.toggleIcon(id); render(); }
+        if (iconAct.dataset.iconAction === "delete") {
+          window.openAppConfirm({
+            title: "提示",
+            message: `确认删除图标「${row?.name || id}」吗？`,
+            onConfirm: () => { DM.removeIcon(id); render(); },
+          });
+        }
+      }
+      const save = e.target.closest("[data-save-icon]");
+      if (save) {
+        const drawer = save.closest(".app-drawer, [class*='drawer']") || document;
+        const get = (k) => drawer.querySelector(`[data-field="${k}"]`)?.value ?? document.querySelector(`[data-field="${k}"]`)?.value;
+        const name = (document.querySelector('[data-field="name"]')?.value || "").trim();
+        if (!name) return;
+        DM.saveIcon({
+          id: save.dataset.saveIcon || undefined,
+          name,
+          category: document.querySelector('[data-field="category"]')?.value,
+          asset: document.querySelector('[data-field="asset"]')?.value,
+          enabled: document.querySelector('[data-field="enabled"]')?.value === "true",
+          remark: document.querySelector('[data-field="remark"]')?.value || "",
+        });
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安全态势分析报表 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/report.css">
+</head>
+<body class="report-page" data-menu-key="report.situation" data-page-section="报表管理" data-page-title="安全态势分析报表">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters rpt-filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">时间范围</span>
+              <select class="form-control" data-filter="range">
+                <option value="24h">近 24 小时</option>
+                <option value="7d" selected>近 7 天</option>
+                <option value="30d">近 30 天</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">部门</span>
+              <select class="form-control" data-filter="dept" id="deptSelect"></select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">查询</button>
+          </div>
+        </section>
+
+        <section class="rpt-metrics" id="rptMetrics"></section>
+
+        <section class="rpt-chart-grid">
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">告警 / 事件趋势</h2></div>
+            <div class="rpt-chart-el" id="cTrend"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">攻击类型分布</h2></div>
+            <div class="rpt-chart-el" id="cAttack"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">攻击源地域 Top</h2></div>
+            <div class="rpt-chart-el" id="cRegion"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">被攻击业务分布</h2></div>
+            <div class="rpt-chart-el" id="cBiz"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">处置状态</h2></div>
+            <div class="rpt-chart-el" id="cStatus"></div>
+          </article>
+          <article class="card rpt-chart-card">
+            <div class="card-title-row"><h2 class="card-title">安全趋势变化</h2></div>
+            <div class="rpt-chart-el" id="cScore"></div>
+          </article>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">重点威胁 / 事件摘要</h2>
+            <div class="btn-row">
+              <input class="form-control" style="width:180px" data-filter="keyword" placeholder="关键字">
+              <select class="form-control" style="width:120px" data-filter="status">
+                <option value="">全部状态</option>
+                <option>待处置</option>
+                <option>处置中</option>
+                <option>已关闭</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead>
+                <tr>
+                  <th>类型</th><th>等级</th><th>来源</th><th>受害资产</th><th>部门</th><th>处置状态</th><th>响应时长</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="rptBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/report-mock.js"></script>
+  <script>
+    const charts = {};
+    let rowsCache = [];
+    const C = { primary: "#1476FF", red: "#F53F57", yellow: "#F7BA1E", green: "#14C9BA", purple: "#9359E3" };
+
+    document.getElementById("deptSelect").innerHTML = (window.ReportMock.departments || ["全部"]).map((d) =>
+      `<option value="${d}">${d}</option>`
+    ).join("");
+
+    function levelTag(level) {
+      const cls = level === "高危" ? "danger" : level === "中危" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+    function statusTag(status) {
+      const cls = status === "已关闭" ? "success" : status === "处置中" ? "warning" : "danger";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+    function ensure(id, key) {
+      if (!charts[key]) charts[key] = echarts.init(document.getElementById(id));
+      return charts[key];
+    }
+
+    function openDetail(item) {
+      window.openAppDrawer({
+        title: "事件详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">类型</span><span class="info-value">${item.type || "-"}</span></div>
+            <div class="info-item"><span class="info-label">等级</span><span class="info-value">${levelTag(item.level)}</span></div>
+            <div class="info-item"><span class="info-label">来源</span><span class="info-value">${item.source || "-"}</span></div>
+            <div class="info-item"><span class="info-label">受害资产</span><span class="info-value">${item.asset || "-"}</span></div>
+            <div class="info-item"><span class="info-label">责任部门</span><span class="info-value">${item.dept || "-"}</span></div>
+            <div class="info-item"><span class="info-label">处置状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+            <div class="info-item"><span class="info-label">响应时长</span><span class="info-value">${item.responseMin ? item.responseMin + " 分钟" : "-"}</span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function renderRows(rows) {
+      const kw = (document.querySelector('[data-filter="keyword"]').value || "").trim();
+      const st = document.querySelector('[data-filter="status"]').value;
+      const dept = document.querySelector('[data-filter="dept"]').value;
+      const list = rows.filter((r) => {
+        if (dept && dept !== "全部" && r.dept !== dept) return false;
+        if (st && r.status !== st) return false;
+        if (kw && !`${r.type}${r.source}${r.asset}`.includes(kw)) return false;
+        return true;
+      });
+      document.getElementById("rptBody").innerHTML = list.map((r) => `
+        <tr data-id="${r.id}">
+          <td>${r.type}</td>
+          <td>${levelTag(r.level)}</td>
+          <td>${r.source}</td>
+          <td>${r.asset}</td>
+          <td>${r.dept || "-"}</td>
+          <td>${statusTag(r.status)}</td>
+          <td>${r.responseMin ? r.responseMin + " 分钟" : "-"}</td>
+          <td><button class="table-action" type="button" data-detail="${r.id}">详情</button></td>
+        </tr>`).join("") || `<tr><td colspan="8" class="text-center status-muted">暂无数据</td></tr>`;
+    }
+
+    function paint(range) {
+      const data = window.ReportMock.getSituation(range);
+      rowsCache = data.rows || [];
+      document.getElementById("rptMetrics").innerHTML = data.kpis.map((k) =>
+        `<div class="rpt-metric"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub || ""}</div></div>`
+      ).join("");
+
+      ensure("cTrend", "trend").setOption({
+        color: [C.primary, C.red],
+        tooltip: { trigger: "axis" },
+        legend: { data: ["告警", "事件"], top: 0 },
+        grid: { left: 48, right: 16, top: 36, bottom: 28 },
+        xAxis: { type: "category", data: data.alarmTrend.labels },
+        yAxis: { type: "value" },
+        series: [
+          { name: "告警", type: "line", smooth: true, data: data.alarmTrend.alarms },
+          { name: "事件", type: "line", smooth: true, data: data.alarmTrend.events },
+        ],
+      });
+
+      ensure("cAttack", "attack").setOption({
+        color: [C.primary, C.purple, C.red, C.yellow, C.green, "#5B83FF"],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "pie", radius: ["40%", "68%"],
+          data: data.attackTypes.map((d) => ({ name: d.name, value: d.value })),
+          label: { formatter: "{b}" },
+        }],
+      });
+
+      ensure("cRegion", "region").setOption({
+        color: [C.primary],
+        tooltip: { trigger: "axis" },
+        grid: { left: 100, right: 24, top: 16, bottom: 28 },
+        xAxis: { type: "value" },
+        yAxis: { type: "category", data: data.sourceRegions.map((d) => d.name).reverse() },
+        series: [{ type: "bar", data: data.sourceRegions.map((d) => d.value).reverse(), barWidth: 14 }],
+      });
+
+      ensure("cBiz", "biz").setOption({
+        color: [C.purple],
+        tooltip: { trigger: "axis" },
+        grid: { left: 48, right: 16, top: 24, bottom: 48 },
+        xAxis: { type: "category", data: data.victimBiz.map((d) => d.name), axisLabel: { rotate: 20 } },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", barWidth: 28, data: data.victimBiz.map((d) => d.value) }],
+      });
+
+      ensure("cStatus", "status").setOption({
+        color: [C.red, C.yellow, C.green],
+        tooltip: { trigger: "item" },
+        series: [{
+          type: "pie", radius: ["42%", "68%"],
+          data: data.handleStatus.map((d) => ({ name: d.name, value: d.value })),
+        }],
+      });
+
+      ensure("cScore", "score").setOption({
+        color: [C.green, C.red],
+        tooltip: { trigger: "axis" },
+        legend: { data: ["安全评分", "高危数"], top: 0 },
+        grid: { left: 48, right: 16, top: 36, bottom: 28 },
+        xAxis: { type: "category", data: data.securityTrend.labels },
+        yAxis: { type: "value" },
+        series: [
+          { name: "安全评分", type: "line", smooth: true, data: data.securityTrend.score },
+          { name: "高危数", type: "line", smooth: true, data: data.securityTrend.highRisk },
+        ],
+      });
+
+      renderRows(rowsCache);
+    }
+
+    function currentRange() {
+      return document.querySelector('[data-filter="range"]').value || "7d";
+    }
+
+    paint(currentRange());
+
+    document.querySelector('[data-action="search"]').addEventListener("click", () => paint(currentRange()));
+    document.querySelector('[data-action="reset"]').addEventListener("click", () => {
+      document.querySelector('[data-filter="range"]').value = "7d";
+      document.querySelector('[data-filter="dept"]').value = "全部";
+      document.querySelector('[data-filter="keyword"]').value = "";
+      document.querySelector('[data-filter="status"]').value = "";
+      paint("7d");
+    });
+    document.querySelector('[data-filter="keyword"]').addEventListener("input", () => renderRows(rowsCache));
+    document.querySelector('[data-filter="status"]').addEventListener("change", () => renderRows(rowsCache));
+    document.querySelector('[data-filter="dept"]').addEventListener("change", () => renderRows(rowsCache));
+
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-detail]");
+      if (!btn) return;
+      const item = rowsCache.find((r) => String(r.id) === String(btn.dataset.detail));
+      if (item) openDetail(item);
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c && c.resize()));
+  </script>
+</body>
+</html>

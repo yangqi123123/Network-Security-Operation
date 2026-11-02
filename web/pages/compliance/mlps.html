@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>等保2.0合规性自评估 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/compliance.css">
+</head>
+<body class="cp-page" data-menu-key="compliance.mlps" data-page-section="安全合规与审计" data-page-title="等保自评估">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="cpMlpsMetrics">
+          <article class="metric-card"><div class="metric-label">检查项总数</div><div class="metric-number" data-m="total">0</div></article>
+          <article class="metric-card"><div class="metric-label">满足</div><div class="metric-number" data-m="satisfied">0</div></article>
+          <article class="metric-card"><div class="metric-label">不满足</div><div class="metric-number" data-m="unsatisfied">0</div></article>
+          <article class="metric-card"><div class="metric-label">整改中</div><div class="metric-number" data-m="remediating">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">评估批次</span>
+              <select class="form-control" data-filter="batchId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">安全类</span>
+              <select class="form-control" data-filter="securityClass"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">符合状态</span>
+              <select class="form-control" data-filter="status">
+                <option value="">全部</option>
+                <option value="satisfied">满足</option>
+                <option value="partial">部分满足</option>
+                <option value="unsatisfied">不满足</option>
+                <option value="na">不适用</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="条款号/名称/责任人">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">检查项列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="assess"><i class="fa-solid fa-rotate"></i> 发起自评估</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>条款号</th><th>检查项名称</th><th>安全类</th><th>映射对象摘要</th>
+                  <th>符合状态</th><th>整改状态</th><th>责任人</th><th>计划完成时间</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="cpMlpsBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="cpMlpsPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/compliance-mock.js"></script>
+  <script>
+    const CP = window.Compliance;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label || meta.label === "-") return `<span class="tag">${esc(meta?.label || "-")}</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function batchName(id) {
+      const b = CP.listBatches().find((x) => x.id === id);
+      return b ? b.name : id || "-";
+    }
+
+    function fillFilters() {
+      const batchSel = document.querySelector("[data-filter='batchId']");
+      batchSel.innerHTML = '<option value="">全部</option>' + CP.listBatches().map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("");
+      const classSel = document.querySelector("[data-filter='securityClass']");
+      classSel.innerHTML = '<option value="">全部</option>' + CP.SECURITY_CLASS.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = CP.mlpsMetrics();
+      document.querySelectorAll("#cpMlpsMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("cpMlpsPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = CP.listCheckItems({
+        batchId: f.batchId || undefined,
+        securityClass: f.securityClass || undefined,
+        status: f.status || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("cpMlpsBody").innerHTML = rows.map((row) => {
+        const canRemediate = row.status === "partial" || row.status === "unsatisfied";
+        return `<tr data-id="${esc(row.id)}">
+          <td>${dash(row.clauseNo)}</td>
+          <td>${dash(row.name)}</td>
+          <td>${dash(row.securityClass)}</td>
+          <td>${dash(row.mappedObjects)}</td>
+          <td>${tagHtml(CP.checkStatusTag(row.status))}</td>
+          <td>${tagHtml(CP.remediationTag(row.remediationStatus))}</td>
+          <td>${dash(row.owner)}</td>
+          <td>${dash(row.dueAt)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            <button class="table-action" type="button" data-row="rate" data-id="${esc(row.id)}">评定</button>
+            ${canRemediate ? `<button class="table-action" type="button" data-row="remediate" data-id="${esc(row.id)}">生成整改</button>` : ""}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function openDetail(id) {
+      const row = CP.getCheckItem(id);
+      if (!row) return;
+      const evidence = (row.evidence || []).length
+        ? `<table class="cp-subtable"><thead><tr><th>证据名称</th><th>上传人</th><th>时间</th></tr></thead><tbody>${row.evidence.map((e) => `<tr><td>${dash(e.name)}</td><td>${dash(e.uploader)}</td><td>${dash(e.uploadedAt)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="cp-muted">暂无证据</div>`;
+      const risks = (row.riskLinks || []).length
+        ? `<ul class="cp-risk-list">${row.riskLinks.map((r) => `<li>${esc(r.kind)}：${esc(r.summary)}</li>`).join("")}</ul>`
+        : `<div class="cp-muted">暂无关联风险</div>`;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">检查项信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("条款号", dash(row.clauseNo))}
+            ${infoItem("检查项名称", dash(row.name))}
+            ${infoItem("安全类", dash(row.securityClass))}
+            ${infoItem("评估批次", esc(batchName(row.batchId)))}
+            ${infoItem("映射对象", dash(row.mappedObjects))}
+            ${infoItem("符合状态", tagHtml(CP.checkStatusTag(row.status)))}
+            ${infoItem("评分", row.score == null ? "-" : esc(row.score))}
+            ${infoItem("整改状态", tagHtml(CP.remediationTag(row.remediationStatus)))}
+            ${infoItem("责任人", dash(row.owner))}
+            ${infoItem("计划完成时间", dash(row.dueAt))}
+            ${infoItem("复核结果", dash(row.reviewResult))}
+            ${infoItem("整改说明", dash(row.remediationNote))}
+          </div>
+        </section>
+        <section class="detail-section"><h3 class="detail-title">证据项</h3>${evidence}</section>
+        <section class="detail-section"><h3 class="detail-title">关联风险</h3>${risks}</section>`;
+      window.openAppDrawer({ title: "检查项详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openRate(id) {
+      const row = CP.getCheckItem(id);
+      if (!row) return;
+      const opts = Object.entries(CP.CHECK_STATUS).map(([k, v]) => `<option value="${k}" ${row.status === k ? "selected" : ""}>${esc(v)}</option>`).join("");
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">符合状态</span><select class="form-control" id="rateStatus">${opts}</select></label>
+        <label class="form-field form-item"><span class="form-label">评分</span><input class="form-control" id="rateScore" type="number" min="0" max="100" value="${row.score ?? ""}" placeholder="0-100"></label>
+        <label class="form-field form-item"><span class="form-label">证据说明</span><input class="form-control" id="rateEvidence" placeholder="附件文件名，如 巡检记录.pdf"></label>
+        <label class="form-field form-item"><span class="form-label">备注</span><textarea class="form-control textarea" id="rateRemark" placeholder="请输入"></textarea></label>`;
+      window.openAppDrawer({
+        title: "评定检查项",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="rate" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function openRemediate(id) {
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">责任人</span><input class="form-control" id="remOwner" placeholder="请输入"></label>
+        <label class="form-field form-item"><span class="form-label form-required">计划完成时间</span><input class="form-control" id="remDue" placeholder="2026-11-30"></label>
+        <label class="form-field form-item"><span class="form-label form-required">整改说明</span><textarea class="form-control textarea" id="remNote" placeholder="请输入"></textarea></label>`;
+      window.openAppDrawer({
+        title: "生成整改任务",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="remediate" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    fillFilters();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "assess") {
+        CP.runSelfAssessment();
+        alert("已发起自评估（Mock），统计已刷新。");
+        render();
+      }
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "detail") openDetail(id);
+        if (rowBtn.dataset.row === "rate") openRate(id);
+        if (rowBtn.dataset.row === "remediate") openRemediate(id);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (!submit) return;
+      if (submit.dataset.drawerSubmit === "rate") {
+        CP.assessCheckItem(submit.dataset.id, {
+          status: document.getElementById("rateStatus").value,
+          score: document.getElementById("rateScore").value,
+          evidenceNote: document.getElementById("rateEvidence").value.trim(),
+          remark: document.getElementById("rateRemark").value.trim(),
+        });
+        window.closeAppDrawer();
+        render();
+      }
+      if (submit.dataset.drawerSubmit === "remediate") {
+        const res = CP.createRemediation(submit.dataset.id, {
+          owner: document.getElementById("remOwner").value.trim(),
+          dueAt: document.getElementById("remDue").value.trim(),
+          note: document.getElementById("remNote").value.trim(),
+        });
+        if (!res.ok) { alert(res.message); return; }
+        window.closeAppDrawer();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>

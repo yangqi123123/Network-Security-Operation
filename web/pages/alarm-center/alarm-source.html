@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>故障告警源 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+</head>
+<body class="alarm-page" data-menu-key="fault.source" data-page-section="故障管理" data-page-title="故障告警源">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">故障告警源</h1>
+            <p class="page-desc">从告警源维度分析根因、量级、确认状态与设备分布，并展示实时告警。</p>
+          </div>
+          <div class="btn-row"></div>
+        </section>
+
+        <section class="card fa-chart-card fas-root-card">
+          <div class="fas-card-head"><h2 class="card-title">告警源分析</h2></div>
+          <div class="fa-chart-el" id="fasRoot"></div>
+        </section>
+
+        <section class="fas-top-grid">
+          <article class="card fas-panel">
+            <div class="fas-card-head"><h2 class="card-title">今日告警量</h2></div>
+            <div class="fas-donut-wrap">
+              <div class="fas-donut-chart" id="fasToday"></div>
+              <div class="fas-side-stats" id="fasTodayStats"></div>
+            </div>
+          </article>
+          <article class="card fas-panel">
+            <div class="fas-card-head"><h2 class="card-title">告警确认状态分析</h2></div>
+            <div class="fas-donut-wrap">
+              <div class="fas-donut-chart" id="fasConfirm"></div>
+              <div class="fas-side-stats" id="fasConfirmStats"></div>
+            </div>
+          </article>
+          <article class="card fas-panel">
+            <div class="fas-card-head"><h2 class="card-title">近7天告警趋势分析</h2></div>
+            <div class="fa-chart-el fas-trend-el" id="fasTrend"></div>
+          </article>
+        </section>
+
+        <section class="fas-bottom-grid">
+          <article class="card fas-panel fas-list-panel">
+            <div class="fas-card-head"><h2 class="card-title">实时告警列表</h2></div>
+            <div class="table-wrap">
+              <table class="table user-table fas-realtime-table">
+                <thead>
+                  <tr>
+                    <th>网络名称</th>
+                    <th>设备名称</th>
+                    <th>设备IP</th>
+                    <th>资源名称</th>
+                    <th>告警类型</th>
+                    <th>告警级别</th>
+                    <th>告警值</th>
+                    <th>发生时间</th>
+                    <th>是否确认</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="fasRealtimeBody"></tbody>
+              </table>
+            </div>
+          </article>
+          <div class="fas-right-col">
+            <article class="card fas-panel">
+              <div class="fas-card-head"><h2 class="card-title">近7天告警级别分析</h2></div>
+              <div class="fa-chart-el" id="fasLevelStack"></div>
+            </article>
+            <article class="card fas-panel">
+              <div class="fas-card-head"><h2 class="card-title">近7天设备告警 TOP5</h2></div>
+              <div class="fa-chart-el" id="fasTop5"></div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script>
+    const FA = window.FaultAlarm;
+    const charts = {};
+    let data = FA.sourceDashboard();
+
+    function levelBadge(level) {
+      const map = { 掉线: "offline", 严重: "critical", 主要: "major", 次要: "minor", 未知: "unknown" };
+      return `<span class="fas-level ${map[level] || "unknown"}">${level}</span>`;
+    }
+
+    function levelTag(level) {
+      const cls = level === "严重" || level === "掉线" ? "danger" : level === "主要" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+
+    function openRealtimeDetail(row) {
+      window.openAppDrawer({
+        title: "实时告警详情",
+        body: `<section class="detail-section"><h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            <div class="info-item"><span class="info-label">网络名称</span><span class="info-value">${row.network || "-"}</span></div>
+            <div class="info-item"><span class="info-label">设备名称</span><span class="info-value">${row.device || "-"}</span></div>
+            <div class="info-item"><span class="info-label">设备 IP</span><span class="info-value">${row.ip || "-"}</span></div>
+            <div class="info-item"><span class="info-label">资源名称</span><span class="info-value">${row.resource || "-"}</span></div>
+            <div class="info-item"><span class="info-label">告警类型</span><span class="info-value">${row.type || "-"}</span></div>
+            <div class="info-item"><span class="info-label">告警级别</span><span class="info-value">${levelTag(row.level)}</span></div>
+            <div class="info-item"><span class="info-label">告警值</span><span class="info-value">${row.value ?? "-"}</span></div>
+            <div class="info-item"><span class="info-label">发生时间</span><span class="info-value">${row.time || "-"}</span></div>
+            <div class="info-item"><span class="info-label">是否确认</span><span class="info-value"><span class="tag ${row.confirmed ? "success" : "warning"}">${row.confirmed ? "是" : "否"}</span></span></div>
+          </div></section>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function renderRealtime() {
+      document.getElementById("fasRealtimeBody").innerHTML = data.realtime.map((row) => `
+        <tr data-ra-id="${row.id}">
+          <td>${row.network}</td>
+          <td>${row.device}</td>
+          <td>${row.ip}</td>
+          <td>${row.resource}</td>
+          <td>${row.type}</td>
+          <td>${levelBadge(row.level)}</td>
+          <td>${row.value}</td>
+          <td>${row.time}</td>
+          <td>
+            <button class="fas-confirm-btn ${row.confirmed ? "yes" : "no"}" type="button" data-confirm-toggle="${row.id}">
+              ${row.confirmed ? "是" : "否"}
+            </button>
+          </td>
+          <td><button class="table-action" type="button" data-ra-detail="${row.id}">详情</button></td>
+        </tr>`).join("");
+    }
+
+    function paint() {
+      data = FA.sourceDashboard();
+
+      if (!charts.root) charts.root = echarts.init(document.getElementById("fasRoot"));
+      if (!charts.today) charts.today = echarts.init(document.getElementById("fasToday"));
+      if (!charts.confirm) charts.confirm = echarts.init(document.getElementById("fasConfirm"));
+      if (!charts.trend) charts.trend = echarts.init(document.getElementById("fasTrend"));
+      if (!charts.level) charts.level = echarts.init(document.getElementById("fasLevelStack"));
+      if (!charts.top) charts.top = echarts.init(document.getElementById("fasTop5"));
+
+      charts.root.setOption(FA.barOption(data.rootCauses));
+
+      const todayColors = data.todayByLevel.map((item) => FA.SOURCE_LEVEL_COLORS[item.name]);
+      charts.today.setOption(
+        FA.donutWithSideOption(data.todayByLevel, data.todayCenterValue, data.todayCenterLabel, todayColors)
+      );
+      document.getElementById("fasTodayStats").innerHTML = `
+        <div class="fas-stat-line"><span>今日告警总量</span><strong>${data.todayTotal}</strong></div>
+        <div class="fas-stat-line"><span>今日事件总量</span><strong>${data.todayEvents}</strong></div>`;
+
+      charts.confirm.setOption(
+        FA.donutWithSideOption(
+          [
+            { name: "已确认", value: data.confirmed },
+            { name: "未确认", value: data.unconfirmed },
+          ],
+          data.confirmedCenter,
+          "已确认",
+          ["#8B5CF6", "#14C9BA"]
+        )
+      );
+      document.getElementById("fasConfirmStats").innerHTML = `
+        <div class="fas-stat-line"><span>已确认告警数</span><strong>${data.confirmed}</strong></div>
+        <div class="fas-stat-line"><span>未确认告警数</span><strong>${data.unconfirmed}</strong></div>`;
+
+      charts.trend.setOption(FA.lineOption(data.trend7));
+      charts.level.setOption(FA.stackedBarOption(data.levelStack));
+      charts.top.setOption(FA.hBarOption(data.topDevices));
+
+      renderRealtime();
+    }
+
+    paint();
+
+    document.addEventListener("click", (event) => {
+      const detailBtn = event.target.closest("[data-ra-detail]");
+      if (detailBtn) {
+        const row = FA.realtimeAlarms.find((item) => item.id === detailBtn.dataset.raDetail);
+        if (row) openRealtimeDetail(row);
+        return;
+      }
+      const tr = event.target.closest("#fasRealtimeBody tr");
+      if (tr && !event.target.closest("button, input, select, a")) {
+        const row = FA.realtimeAlarms.find((item) => item.id === tr.dataset.raId);
+        if (row) openRealtimeDetail(row);
+        return;
+      }
+      const btn = event.target.closest("[data-confirm-toggle]");
+      if (!btn) return;
+      const row = FA.realtimeAlarms.find((item) => item.id === btn.dataset.confirmToggle);
+      if (!row) return;
+      row.confirmed = !row.confirmed;
+      paint();
+    });
+
+    window.addEventListener("resize", () => Object.values(charts).forEach((c) => c?.resize?.()));
+  </script>
+</body>
+</html>

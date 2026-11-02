@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智能防护 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/screen-protect.css">
+</head>
+<body class="sp-page" data-menu-key="screen.protect" data-page-section="电子屏防护管理" data-page-title="智能防护">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="spProtectMetrics">
+          <article class="metric-card"><div class="metric-label">检测通道数</div><div class="metric-number" data-m="channelCount">0</div></article>
+          <article class="metric-card"><div class="metric-label">今日检出</div><div class="metric-number" data-m="todayDetections">0</div></article>
+          <article class="metric-card"><div class="metric-label">延时开启中</div><div class="metric-number" data-m="delayEnabledCount">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">电子屏</span>
+              <select class="form-control" data-filter="screenId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">内容类别</span>
+              <select class="form-control" data-filter="category">
+                <option value="">全部</option>
+                <option value="porn">色情</option>
+                <option value="politics">涉政</option>
+                <option value="terror">暴恐</option>
+                <option value="abuse">辱骂</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">风险等级</span>
+              <select class="form-control" data-filter="riskLevel">
+                <option value="">全部</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="屏/通道/单号">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">检出事件</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="channel"><i class="fa-solid fa-sliders"></i> 通道配置</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>时间</th><th>电子屏</th><th>通道</th><th>检出类别</th><th>置信度</th>
+                  <th>延时状态</th><th>处置联动</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="spProtectBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="spProtectPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/screen-protect-mock.js"></script>
+  <script>
+    const SP = window.ScreenProtect;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return `<span>-</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+    function fillScreens() {
+      const opts = SP.listScreens().map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+      document.querySelectorAll("[data-filter='screenId'], #chScreen").forEach((el) => {
+        if (!el) return;
+        const keep = el.id === "chScreen" ? '<option value="">请选择</option>' : '<option value="">全部</option>';
+        el.innerHTML = keep + opts;
+      });
+    }
+    function refreshMetrics() {
+      const m = SP.protectMetrics();
+      document.querySelectorAll("#spProtectMetrics [data-m]").forEach((el) => { el.textContent = m[el.dataset.m] ?? 0; });
+    }
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("spProtectPager").innerHTML = html;
+    }
+    function render() {
+      const f = readFilter();
+      filtered = SP.listDetections({
+        screenId: f.screenId || undefined,
+        category: f.category || undefined,
+        riskLevel: f.riskLevel || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("spProtectBody").innerHTML = pageRows.map((row) => `
+        <tr>
+          <td>${dash(row.time)}</td>
+          <td>${esc(SP.screenName(row.screenId))}</td>
+          <td>${esc(SP.channelName(row.channelId))}</td>
+          <td>${tagHtml(SP.categoryTag(row.category))}</td>
+          <td>${dash(row.confidence)}</td>
+          <td>${row.delayEnabled ? '<span class="tag success">延时开</span>' : '<span class="tag">延时关</span>'}</td>
+          <td>${dash(row.contentActionId)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          </td>
+        </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function openDetail(id) {
+      const row = SP.getDetection(id);
+      if (!row) return;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">检出信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("时间", dash(row.time))}
+            ${infoItem("电子屏", esc(SP.screenName(row.screenId)))}
+            ${infoItem("通道", esc(SP.channelName(row.channelId)))}
+            ${infoItem("检出类别", tagHtml(SP.categoryTag(row.category)))}
+            ${infoItem("置信度", dash(row.confidence))}
+            ${infoItem("风险等级", tagHtml(SP.riskTag(row.riskLevel)))}
+            ${infoItem("延时状态", row.delayEnabled ? "延时开" : "延时关")}
+            ${infoItem("关联处置单", dash(row.contentActionId))}
+            ${infoItem("截帧说明", dash(row.frameNote))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "检出详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openChannelConfig() {
+      const list = SP.listChannels();
+      const screenOpts = SP.listScreens().map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+      const rows = list.map((c) => {
+        const cats = (c.categories || []).map((k) => SP.CATEGORY_LABEL[k] || k).join("、") || "-";
+        return `<tr>
+          <td>${dash(c.name)}</td>
+          <td>${esc(SP.screenName(c.screenId))}</td>
+          <td class="sp-channel-cats">${esc(cats)}</td>
+          <td>${c.delaySec}s</td>
+          <td>${c.enabled ? '<span class="tag success">启用</span>' : '<span class="tag">停用</span>'}</td>
+          <td><button class="table-action" type="button" data-row="edit-ch" data-id="${esc(c.id)}">编辑</button></td>
+        </tr>`;
+      }).join("");
+      const body = `
+        <div class="btn-row" style="margin-bottom:16px">
+          <button class="btn btn-primary" type="button" data-row="new-ch">新建通道</button>
+        </div>
+        <div class="table-wrap">
+          <table class="table"><thead><tr><th>通道</th><th>电子屏</th><th>检测类别</th><th>延时</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6">暂无通道</td></tr>'}</tbody></table>
+        </div>
+        <div id="chFormBox" style="display:none;margin-top:16px;border-top:1px solid var(--divider);padding-top:16px">
+          <input type="hidden" id="chId">
+          <label class="form-field form-item"><span class="form-label form-required">通道名称</span><input class="form-control" id="chName"></label>
+          <label class="form-field form-item"><span class="form-label form-required">所属电子屏</span><select class="form-control" id="chScreen"><option value="">请选择</option>${screenOpts}</select></label>
+          <div class="form-label" style="margin-bottom:8px">检测类别</div>
+          <div class="sp-check-grid">
+            ${Object.entries(SP.CATEGORY_LABEL).map(([k, v]) => `<label><input type="checkbox" data-cat="${k}"> ${esc(v)}</label>`).join("")}
+          </div>
+          <label class="form-field form-item"><span class="form-label">延时秒数</span><input class="form-control" id="chDelay" type="number" min="0" value="5"></label>
+          <label class="switch-line form-item"><span>启用通道</span><input type="checkbox" id="chEnabled" checked></label>
+          <button class="btn btn-primary" type="button" data-drawer-submit="channel">保存通道</button>
+        </div>`;
+      window.openAppDrawer({ title: "通道配置", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function showChannelForm(id) {
+      const box = document.getElementById("chFormBox");
+      if (!box) return;
+      box.style.display = "block";
+      const row = id ? SP.getChannel(id) : null;
+      document.getElementById("chId").value = row?.id || "";
+      document.getElementById("chName").value = row?.name || "";
+      document.getElementById("chScreen").value = row?.screenId || "";
+      document.getElementById("chDelay").value = row?.delaySec ?? 5;
+      document.getElementById("chEnabled").checked = row ? !!row.enabled : true;
+      document.querySelectorAll("[data-cat]").forEach((el) => {
+        el.checked = row ? (row.categories || []).includes(el.dataset.cat) : true;
+      });
+    }
+
+    fillScreens();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "channel") openChannelConfig();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "edit-ch") showChannelForm(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "new-ch") showChannelForm(null);
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (submit?.dataset.drawerSubmit === "channel") {
+        const name = document.getElementById("chName")?.value.trim();
+        const screenId = document.getElementById("chScreen")?.value;
+        if (!name || !screenId) { alert("请填写通道名称并选择电子屏"); return; }
+        const categories = [...document.querySelectorAll("[data-cat]:checked")].map((el) => el.dataset.cat);
+        SP.saveChannel({
+          id: document.getElementById("chId")?.value || undefined,
+          name,
+          screenId,
+          categories,
+          delaySec: Number(document.getElementById("chDelay")?.value) || 0,
+          enabled: document.getElementById("chEnabled")?.checked,
+        });
+        window.closeAppDrawer();
+        render();
+        openChannelConfig();
+      }
+    });
+  </script>
+</body>
+</html>

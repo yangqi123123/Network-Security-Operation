@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>告警通知 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/alarm-center.css">
+</head>
+<body class="alarm-page alarm-info-page" data-menu-key="fault.notify" data-page-section="故障管理" data-page-title="告警通知">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">告警通知</h1>
+            <p class="page-desc">支持邮件、微信、钉钉多渠道分级通知与超时升级，覆盖主机/网络/数据库等故障来源。</p>
+          </div>
+          <div class="btn-row"></div>
+        </section>
+
+        <section class="card filters alarm-filter-card">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">告警类型</span>
+              <select class="form-control" data-filter="type">
+                <option value="">全部</option>
+                <option>CPU超阈</option><option>表空间超阈</option><option>会话超阈</option>
+                <option>设备离线</option><option>带宽利用率超阈</option><option>磁盘IO异常</option>
+                <option>进程僵死</option><option>接口故障</option><option>慢查询激增</option><option>死锁</option><option>内存缓冲告警</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">告警等级</span>
+              <select class="form-control" data-filter="level"><option value="">全部</option><option>告警</option><option>预警</option><option>提醒</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">告警状态</span>
+              <select class="form-control" data-filter="status"><option value="">全部</option><option>未处理</option><option>处理中</option><option>已处理</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">通知渠道</span>
+              <select class="form-control" data-filter="channel"><option value="">全部</option><option>邮件</option><option>微信</option><option>钉钉</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">升级状态</span>
+              <select class="form-control" data-filter="escalated"><option value="">全部</option><option value="yes">已升级</option><option value="no">未升级</option></select>
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card alarm-list-card user-list-card">
+          <div class="card-title-row alarm-toolbar user-toolbar">
+            <h2 class="card-title">告警通知列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="templates"><i class="fa-solid fa-file-lines"></i> 通知模板</button>
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <div class="alarm-batch-menu">
+                <button class="btn btn-primary" type="button">批量处理 <i class="fa-solid fa-chevron-down alarm-batch-chevron"></i></button>
+                <div class="alarm-batch-panel">
+                  <span class="alarm-batch-count">已选择 <strong data-batch-count>0</strong> 条未处理告警</span>
+                  <div class="alarm-batch-actions">
+                    <button class="btn btn-secondary" type="button" data-batch-action="false">误报</button>
+                    <button class="btn btn-secondary" type="button" data-batch-action="process">处理</button>
+                    <button class="btn btn-primary" type="button" data-batch-action="transfer">转工单</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table alarm-table user-table">
+              <thead>
+                <tr>
+                  <th class="alarm-select-col">选择</th>
+                  <th>资源</th>
+                  <th>所属域</th>
+                  <th>告警类型</th>
+                  <th>告警描述</th>
+                  <th>等级</th>
+                  <th>通知渠道</th>
+                  <th>升级</th>
+                  <th>时间</th>
+                  <th>状态</th>
+                  <th>转单</th>
+                  <th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="alarmInfoBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="alarmPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/fault-alarm-mock.js"></script>
+  <script>
+    const FA = window.FaultAlarm;
+    const alarmInfo = FA.alarms;
+    let filtered = alarmInfo.slice();
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function levelClass(level) { return level === "告警" ? "high" : level === "预警" ? "medium" : "low"; }
+    function statusClass(status) { return status === "未处理" ? "active" : status === "处理中" ? "processing" : "processed"; }
+    function transferStatus(item) {
+      if (item.transferStatus) return item.transferStatus;
+      return item.workOrderNo ? "已转单" : "未转单";
+    }
+    function byId(id) { return alarmInfo.find((x) => String(x.id) === String(id)) || alarmInfo[0]; }
+    function selectedIds() { return [...document.querySelectorAll("[data-alarm-select]:checked")].map((el) => el.dataset.alarmSelect); }
+    function syncBatch() {
+      const n = selectedIds().length;
+      const el = document.querySelector("[data-batch-count]");
+      if (el) el.textContent = n;
+      document.querySelectorAll("[data-batch-action]").forEach((btn) => { btn.disabled = !n; });
+    }
+
+    function actionMarkup(item) {
+      if (item.status !== "未处理") {
+        return `<button class="table-action" type="button" data-alarm-action="detail" data-alarm-id="${item.id}">详情</button>`;
+      }
+      return `<button class="table-action" type="button" data-alarm-action="detail" data-alarm-id="${item.id}">详情</button>
+        <button class="table-action" type="button" data-alarm-action="false" data-alarm-id="${item.id}">误报</button>
+        <button class="table-action" type="button" data-alarm-action="process" data-alarm-id="${item.id}">处理</button>
+        <button class="table-action" type="button" data-alarm-action="transfer" data-alarm-id="${item.id}">转工单</button>`;
+    }
+
+    function renderPager() {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      let html = `<span>共 <strong>${filtered.length}</strong> 条，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= totalPages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === totalPages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("alarmPager").innerHTML = html;
+    }
+
+    function renderAlarmInfo() {
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("alarmInfoBody").innerHTML = rows.map((item) => `
+        <tr data-alarm-id="${item.id}">
+          <td class="alarm-select-col"><input class="alarm-row-check" type="checkbox" data-alarm-select="${item.id}" ${item.status === "未处理" ? "" : "disabled"}></td>
+          <td><strong>${item.device}</strong><br><small class="status-muted">${item.deviceCode}</small></td>
+          <td>${item.domain || "-"}</td>
+          <td>${item.type}</td>
+          <td class="alarm-message" title="${item.message}">${item.message}</td>
+          <td><span class="alarm-level ${levelClass(item.level)}">${item.level}</span></td>
+          <td><span class="alarm-channel-tags">${(item.channels || []).map((c) => `<span class="alarm-channel-tag">${c}</span>`).join("")}</span></td>
+          <td>${item.escalated ? `<span class="alarm-escalate-yes">已升级</span>` : "未升级"}</td>
+          <td>${item.time}</td>
+          <td><span class="alarm-state ${statusClass(item.status)}">${item.status}</span></td>
+          <td><span class="alarm-transfer-state ${transferStatus(item) === "已转单" ? "is-transferred" : "is-pending"}">${transferStatus(item)}</span></td>
+          <td class="user-actions-col">${actionMarkup(item)}</td>
+        </tr>`).join("");
+      renderPager();
+      syncBatch();
+    }
+
+    function filterAlarmInfo() {
+      const f = Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value]));
+      filtered = alarmInfo.filter((item) =>
+        (!f.type || item.type === f.type)
+        && (!f.level || item.level === f.level)
+        && (!f.status || item.status === f.status)
+        && (!f.channel || (item.channels || []).includes(f.channel))
+        && (!f.escalated || (f.escalated === "yes" ? item.escalated : !item.escalated))
+      );
+      currentPage = 1;
+      renderAlarmInfo();
+    }
+
+    function levelTag(level) {
+      const cls = level === "告警" || level === "严重" ? "danger" : level === "预警" || level === "主要" ? "warning" : "muted";
+      return `<span class="tag ${cls}">${level || "-"}</span>`;
+    }
+    function statusTag(status) {
+      const cls = status === "未处理" ? "danger" : status === "处理中" ? "warning" : "success";
+      return `<span class="tag ${cls}">${status || "-"}</span>`;
+    }
+
+    function escHtml(text) {
+      return String(text == null ? "" : text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderHistoryTimeline(history) {
+      const list = Array.isArray(history) ? [...history] : [];
+      // 最新在上
+      list.sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+      if (!list.length) {
+        return `<p class="alarm-detail-empty">暂无处理记录</p>`;
+      }
+      return `<ol class="alarm-history-timeline">${list.map((h) => `
+        <li class="alarm-history-item">
+          <span class="alarm-history-dot" aria-hidden="true"></span>
+          <div class="alarm-history-body">
+            <time class="alarm-history-time">${escHtml(h.time || "-")}</time>
+            <p class="alarm-history-text"><strong>${escHtml(h.operator || "-")}</strong> ${escHtml(h.action || "-")}</p>
+          </div>
+        </li>`).join("")}</ol>`;
+    }
+
+    function openDetail(item) {
+      window.openAppDrawer({
+        title: "告警详情",
+        body: `
+          <div class="alarm-detail-tabs">
+            <button class="alarm-detail-tab active" type="button" data-detail-tab="info">告警信息</button>
+            <button class="alarm-detail-tab" type="button" data-detail-tab="records">处理记录</button>
+          </div>
+          <div data-detail-pane="info">
+            <section class="detail-section"><h3 class="detail-title">基础信息</h3>
+              <div class="detail-grid user-detail-grid">
+                <div class="info-item"><span class="info-label">资源</span><span class="info-value">${escHtml(item.device || "-")}</span></div>
+                <div class="info-item"><span class="info-label">编码</span><span class="info-value">${escHtml(item.deviceCode || "-")}</span></div>
+                <div class="info-item"><span class="info-label">所属系统</span><span class="info-value">${escHtml(item.system || "-")}</span></div>
+                <div class="info-item"><span class="info-label">所属域</span><span class="info-value">${escHtml(item.domain || "-")}</span></div>
+                <div class="info-item"><span class="info-label">类型</span><span class="info-value">${escHtml(item.type || "-")}</span></div>
+                <div class="info-item"><span class="info-label">等级</span><span class="info-value">${levelTag(item.level)}</span></div>
+                <div class="info-item"><span class="info-label">通知渠道</span><span class="info-value">${escHtml((item.channels || []).join("、") || "-")}</span></div>
+                <div class="info-item"><span class="info-label">通知模板</span><span class="info-value">${escHtml(item.template || "-")}</span></div>
+                <div class="info-item"><span class="info-label">升级策略</span><span class="info-value">${item.escalateHours ? `${item.escalateHours} 小时未处理则升级` : "-"}</span></div>
+                <div class="info-item"><span class="info-label">升级状态</span><span class="info-value">${item.escalated ? `已升级至 ${escHtml(item.escalateTo || "上级")}（${escHtml(item.escalateAt || "-")}）` : "未升级"}</span></div>
+                <div class="info-item"><span class="info-label">状态</span><span class="info-value">${statusTag(item.status)}</span></div>
+                <div class="info-item"><span class="info-label">时间</span><span class="info-value">${escHtml(item.time || "-")}</span></div>
+                <div class="info-item"><span class="info-label">工单编号</span><span class="info-value">${escHtml(item.workOrderNo || "-")}</span></div>
+                <div class="info-item"><span class="info-label">描述</span><span class="info-value">${escHtml(item.message || "-")}</span></div>
+              </div>
+            </section>
+          </div>
+          <div class="hidden" data-detail-pane="records">
+            <section class="detail-section">
+              <h3 class="detail-title">处理记录</h3>
+              ${renderHistoryTimeline(item.history)}
+            </section>
+          </div>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>`,
+      });
+    }
+
+    function openFalse(ids) {
+      window.openAppDrawer({
+        title: "误报确认",
+        body: `<label class="form-field form-item"><span class="form-label form-required">误报说明</span><textarea class="form-control textarea" data-false-remark placeholder="请输入误报说明"></textarea></label>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-false-save="${ids.join(",")}">确认</button>`,
+      });
+    }
+
+    function openProcess(ids) {
+      window.openAppDrawer({
+        title: "处理确认",
+        body: `<div class="form-grid-2"><label class="form-field form-item"><span class="form-label form-required">处理人</span><select class="form-control" data-process-field="handler"><option value="">请选择</option><option>管理员</option><option>张三</option><option>李四</option></select></label><label class="form-field form-item"><span class="form-label form-required">处理时间</span><input class="form-control" type="datetime-local" data-process-field="handledAt"></label><label class="form-field form-item form-span-2"><span class="form-label form-required">备注</span><textarea class="form-control textarea" data-process-field="remark" placeholder="请输入处理备注"></textarea></label></div>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-process-save="${ids.join(",")}">确认</button>`,
+      });
+    }
+
+    function openTransfer(ids) {
+      const first = byId(ids[0]);
+      window.openAppDrawer({
+        title: ids.length > 1 ? "批量转工单" : "告警转工单",
+        body: `<div class="form-grid-2"><label class="form-field form-item form-span-2"><span class="form-label form-required">工单标题</span><input class="form-control" data-transfer-field="title" value="${first.device} ${first.type}"></label><label class="form-field form-item"><span class="form-label form-required">联系人</span><input class="form-control" data-transfer-field="contact" placeholder="请输入"></label><label class="form-field form-item"><span class="form-label form-required">联系电话</span><input class="form-control" data-transfer-field="phone" placeholder="请输入"></label><label class="form-field form-item form-span-2"><span class="form-label form-required">报修内容</span><textarea class="form-control textarea" data-transfer-field="content">${first.message}</textarea></label></div>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-transfer-save="${ids.join(",")}">确认</button>`,
+      });
+    }
+
+    function openTemplates() {
+      const rows = FA.templates.map((t) => `<tr><td>${t.name}</td><td>${t.channel}</td><td>${t.sample}</td></tr>`).join("");
+      window.openAppDrawer({
+        title: "故障告警信息模板",
+        body: `<p class="helper-text">可自定义故障告警信息模板，并按等级绑定邮件 / 微信 / 钉钉渠道。</p>
+          <div class="table-wrap"><table class="table user-table"><thead><tr><th>模板名称</th><th>渠道</th><th>样例</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>关闭</button>`,
+      });
+    }
+
+    renderAlarmInfo();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") filterAlarmInfo();
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        filtered = alarmInfo.slice();
+        currentPage = 1;
+        renderAlarmInfo();
+      }
+      if (action === "export") {
+        window.openAppDrawer({
+          title: "导出告警通知",
+          body: "<p>已按当前筛选条件生成告警通知文件（Mock）。</p>",
+          footer: `<button class="btn btn-secondary" data-drawer-close>取消</button><button class="btn btn-primary" data-drawer-close>确认导出</button>`,
+        });
+      }
+      if (action === "templates") openTemplates();
+
+      const alarmAction = event.target.closest("[data-alarm-action]");
+      if (alarmAction) {
+        const item = byId(alarmAction.dataset.alarmId);
+        if (alarmAction.dataset.alarmAction === "detail") openDetail(item);
+        if (alarmAction.dataset.alarmAction === "false") openFalse([item.id]);
+        if (alarmAction.dataset.alarmAction === "process") openProcess([item.id]);
+        if (alarmAction.dataset.alarmAction === "transfer") openTransfer([item.id]);
+      }
+
+      const batch = event.target.closest("[data-batch-action]");
+      if (batch) {
+        const ids = selectedIds();
+        if (!ids.length) return;
+        if (batch.dataset.batchAction === "false") openFalse(ids);
+        if (batch.dataset.batchAction === "process") openProcess(ids);
+        if (batch.dataset.batchAction === "transfer") openTransfer(ids);
+      }
+
+      const tab = event.target.closest("[data-detail-tab]");
+      if (tab) {
+        const body = document.getElementById("drawerBody");
+        body?.querySelectorAll("[data-detail-tab]").forEach((el) => el.classList.toggle("active", el === tab));
+        body?.querySelectorAll("[data-detail-pane]").forEach((pane) => pane.classList.toggle("hidden", pane.dataset.detailPane !== tab.dataset.detailTab));
+      }
+
+      const falseSave = event.target.closest("[data-false-save]");
+      if (falseSave) {
+        const remark = document.querySelector("[data-false-remark]")?.value.trim();
+        if (!remark) return;
+        const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+        falseSave.dataset.falseSave.split(",").forEach((id) => {
+          const item = byId(id);
+          item.status = "已处理";
+          item.closeReason = "误报无问题";
+          item.closeRemark = remark;
+          item.history = [...(item.history || []), { time: stamp, operator: "当前用户", action: `确认误报：${remark}` }];
+        });
+        window.closeAppDrawer();
+        renderAlarmInfo();
+      }
+
+      const processSave = event.target.closest("[data-process-save]");
+      if (processSave) {
+        const values = Object.fromEntries([...document.querySelectorAll("[data-process-field]")].map((el) => [el.dataset.processField, el.value.trim()]));
+        if (!values.handler || !values.handledAt || !values.remark) return;
+        processSave.dataset.processSave.split(",").forEach((id) => {
+          const item = byId(id);
+          item.status = "已处理";
+          item.closedBy = values.handler;
+          item.closedAt = values.handledAt.replace("T", " ");
+          item.closeRemark = values.remark;
+          item.history = [...(item.history || []), { time: item.closedAt, operator: values.handler, action: values.remark }];
+        });
+        window.closeAppDrawer();
+        renderAlarmInfo();
+      }
+
+      const transferSave = event.target.closest("[data-transfer-save]");
+      if (transferSave) {
+        const fields = Object.fromEntries([...document.querySelectorAll("[data-transfer-field]")].map((el) => [el.dataset.transferField, el.value.trim()]));
+        if (!fields.title || !fields.contact || !fields.phone || !fields.content) return;
+        const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+        transferSave.dataset.transferSave.split(",").forEach((id) => {
+          const item = byId(id);
+          item.status = "处理中";
+          item.transferStatus = "已转单";
+          item.workOrderNo = `WO${stamp.slice(0, 10).replaceAll("-", "")}${String(item.id).padStart(3, "0")}`;
+          item.history = [...(item.history || []), { time: stamp, operator: "当前用户", action: `已转工单 ${item.workOrderNo}` }];
+        });
+        window.closeAppDrawer();
+        renderAlarmInfo();
+      }
+
+      const pageNumber = event.target.closest("[data-page-number]");
+      const pageAction = event.target.closest("[data-page-action]");
+      if (pageNumber) { currentPage = Number(pageNumber.dataset.pageNumber); renderAlarmInfo(); }
+      if (pageAction && !pageAction.classList.contains("disabled")) {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        currentPage = pageAction.dataset.pageAction === "prev" ? Math.max(1, currentPage - 1) : Math.min(totalPages, currentPage + 1);
+        renderAlarmInfo();
+      }
+    });
+
+    document.addEventListener("change", (event) => {
+      if (event.target.matches("[data-alarm-select]")) syncBatch();
+    });
+  </script>
+</body>
+</html>

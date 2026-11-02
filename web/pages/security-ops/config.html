@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安全配置管理 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/security-ops.css">
+</head>
+<body class="secops-page config-page list-workbench" data-menu-key="secops.config" data-page-section="安全运营管理" data-page-title="安全配置管理">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">关键字</span><input class="form-control" data-filter="keyword" placeholder="资产/IP/基线"></label>
+            <label class="form-field"><span class="form-label">资产类型</span><select class="form-control" data-filter="assetType"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">部门</span><input class="form-control" data-filter="dept" placeholder="请输入"></label>
+            <label class="form-field"><span class="form-label">检查结果</span><select class="form-control" data-filter="result"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">严重性</span><select class="form-control" data-filter="severity"><option value="">全部</option></select></label>
+            <label class="form-field"><span class="form-label">整改状态</span><select class="form-control" data-filter="remediate"><option value="">全部</option></select></label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">配置核查列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="check"><i class="fa-solid fa-rotate"></i> 发起核查</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>资产</th><th>IP</th><th>类型</th><th>部门</th><th>基线项</th><th>检查结果</th><th>严重性</th><th>整改状态</th><th>最近核查</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="cfgBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="cfgPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/secops-mock.js"></script>
+  <script>
+    const S = window.SecOps;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    function tagHtml(kind, value) {
+      const t = S.tagOf(kind, value);
+      const cls = t.tagClass ? `tag ${t.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(t.label)}</span>`;
+    }
+
+    function fillSelect(key, list) {
+      const el = document.querySelector(`[data-filter="${key}"]`);
+      el.innerHTML = '<option value="">全部</option>' + list.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("cfgPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = S.listConfigs({
+        keyword: f.keyword || undefined,
+        assetType: f.assetType || undefined,
+        dept: f.dept || undefined,
+        result: f.result || undefined,
+        severity: f.severity || undefined,
+        remediate: f.remediate || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("cfgBody").innerHTML = rows.map((row) => `<tr>
+        <td>${dash(row.assetName)}</td>
+        <td>${dash(row.ip)}</td>
+        <td>${dash(row.assetType)}</td>
+        <td>${dash(row.dept)}</td>
+        <td>${dash(row.baseline)}</td>
+        <td>${tagHtml("checkResult", row.result)}</td>
+        <td>${tagHtml("severity", row.severity)}</td>
+        <td>${tagHtml("remediate", row.remediate)}</td>
+        <td>${dash(row.checkedAt)}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+          <button class="table-action" type="button" data-row="ticket" data-id="${esc(row.id)}">生成工单</button>
+          <button class="table-action" type="button" data-row="exception" data-id="${esc(row.id)}">例外申请</button>
+          <button class="table-action" type="button" data-row="review" data-id="${esc(row.id)}">复核对比</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = S.getConfig(id);
+      if (!row) return;
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("资产名称", dash(row.assetName))}
+            ${infoItem("IP", dash(row.ip))}
+            ${infoItem("资产类型", dash(row.assetType))}
+            ${infoItem("部门", dash(row.dept))}
+            ${infoItem("基线项", dash(row.baseline))}
+            ${infoItem("检查结果", tagHtml("checkResult", row.result))}
+            ${infoItem("严重性", tagHtml("severity", row.severity))}
+            ${infoItem("整改状态", tagHtml("remediate", row.remediate))}
+            ${infoItem("最近核查", dash(row.checkedAt))}
+            ${infoItem("例外原因", dash(row.exceptionReason))}
+            ${infoItem("例外有效期", dash(row.exceptionUntil))}
+            ${infoItem("审批人", dash(row.approver))}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "核查详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openException(id) {
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">业务原因</span><textarea class="form-control textarea" id="exReason"></textarea></label>
+        <label class="form-field form-item"><span class="form-label form-required">有效期</span><input class="form-control" id="exUntil" placeholder="2026-12-31"></label>
+        <label class="form-field form-item"><span class="form-label form-required">审批人</span><input class="form-control" id="exApprover"></label>`;
+      window.openAppDrawer({
+        title: "例外申请",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="exception" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    function openReview(id) {
+      const row = S.getConfig(id);
+      if (!row) return;
+      const body = `
+        <div class="secops-compare">
+          <div><div class="secops-template-head"><span>核查前</span></div><div class="secops-template-block">${dash(row.beforeEvidence)}</div></div>
+          <div><div class="secops-template-head"><span>核查后</span></div><div class="secops-template-block">${dash(row.afterEvidence)}</div></div>
+        </div>
+        <label class="form-field form-item" style="margin-top:12px"><span class="form-label">复核后证据</span><input class="form-control" id="rvAfter" value="${esc(row.afterEvidence === "-" ? "" : row.afterEvidence || "")}" placeholder="填写复核证据"></label>
+        <label class="form-field form-item"><span class="form-label">复核结论</span>
+          <select class="form-control" id="rvPass"><option value="1">通过并闭环</option><option value="0">不通过，继续整改</option></select>
+        </label>`;
+      window.openAppDrawer({
+        title: "复核对比",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-drawer-submit="review" data-id="${esc(id)}">确认</button>`,
+      });
+    }
+
+    fillSelect("assetType", S.meta.assetTypes);
+    fillSelect("result", S.meta.checkResults);
+    fillSelect("severity", S.meta.severities);
+    fillSelect("remediate", S.meta.remediates);
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1; render();
+      }
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "export") alert("已导出（Mock）");
+      if (action === "check") {
+        const n = S.runCheck();
+        alert(`已发起核查，更新 ${n} 条记录（Mock）`);
+        render();
+      }
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        const mode = rowBtn.dataset.row;
+        if (mode === "detail") openDetail(id);
+        if (mode === "ticket") {
+          window.openAppConfirm({
+            title: "生成工单",
+            message: "确认为该不合规项生成整改工单？",
+            onConfirm: () => {
+              const tk = S.createTicketFromConfig(id);
+              alert(tk ? `已生成工单 ${tk.no}` : "生成失败");
+              render();
+            },
+          });
+        }
+        if (mode === "exception") openException(id);
+        if (mode === "review") openReview(id);
+      }
+
+      const submit = event.target.closest("[data-drawer-submit]");
+      if (submit) {
+        const id = submit.dataset.id;
+        if (submit.dataset.drawerSubmit === "exception") {
+          const reason = document.getElementById("exReason")?.value.trim();
+          const until = document.getElementById("exUntil")?.value.trim();
+          const approver = document.getElementById("exApprover")?.value.trim();
+          if (!reason || !until || !approver) { alert("请填写业务原因、有效期和审批人"); return; }
+          S.applyException(id, { reason, until, approver });
+        }
+        if (submit.dataset.drawerSubmit === "review") {
+          S.reviewConfig(id, {
+            pass: document.getElementById("rvPass").value === "1",
+            afterEvidence: document.getElementById("rvAfter").value.trim() || "复核通过",
+          });
+        }
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      if (event.target.closest("[data-page-action='prev']") && currentPage > 1) { currentPage -= 1; render(); }
+      if (event.target.closest("[data-page-action='next']")) {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

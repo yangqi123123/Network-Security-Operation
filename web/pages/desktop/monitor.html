@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>终端操作监控 - 网络安全运维管理平台</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/desktop-security.css?v=20261101b">
+</head>
+<body class="ds-page" data-menu-key="desktop.monitor" data-page-section="桌面安全管理" data-page-title="终端操作监控">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="metric-grid" id="dsOpsMetrics">
+          <article class="metric-card"><div class="metric-label">今日事件</div><div class="metric-number" data-m="today">0</div></article>
+          <article class="metric-card"><div class="metric-label">今日异常</div><div class="metric-number" data-m="todayRisk">0</div></article>
+          <article class="metric-card"><div class="metric-label">未处置</div><div class="metric-number" data-m="open">0</div></article>
+          <article class="metric-card"><div class="metric-label">覆盖终端数</div><div class="metric-number" data-m="hostCount">0</div></article>
+        </section>
+
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">行为类型</span>
+              <select class="form-control" data-filter="category"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">终端</span>
+              <select class="form-control" data-filter="hostId"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">风险等级</span>
+              <select class="form-control" data-filter="riskLevel">
+                <option value="">全部</option>
+                <option value="none">无</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">开始日期</span>
+              <input class="form-control" data-filter="dateFrom" placeholder="2026-10-30">
+            </label>
+            <label class="form-field"><span class="form-label">结束日期</span>
+              <input class="form-control" data-filter="dateTo" placeholder="2026-10-30">
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="摘要/账号">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">操作事件列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="refresh"><i class="fa-solid fa-rotate"></i> 刷新</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>时间</th><th>终端</th><th>行为类型</th><th>摘要</th><th>账号</th>
+                  <th>风险</th><th>迹象</th><th>处置状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="dsOpsBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="dsOpsPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/desktop-security-mock.js"></script>
+  <script>
+    const DS = window.DesktopSecurity;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    const DETAIL_LABELS = {
+      path: "路径", process: "进程", remoteIp: "远端IP", port: "端口", bytes: "流量",
+      software: "软件", version: "版本", account: "账号", action: "动作", share: "共享名",
+      device: "设备", trafficIn: "入向流量", trafficOut: "出向流量", message: "日志内容",
+      hardware: "硬件", service: "服务", result: "结果", file: "文件",
+    };
+
+    function tagHtml(meta) {
+      if (!meta || !meta.label) return "-";
+      if (meta.label === "无" && !meta.tagClass) return `<span>${esc(meta.label)}</span>`;
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    }
+
+    function fillFilters() {
+      const catSel = document.querySelector("[data-filter='category']");
+      catSel.innerHTML = '<option value="">全部</option>' + Object.entries(DS.CATEGORY_LABEL).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+      const hostSel = document.querySelector("[data-filter='hostId']");
+      hostSel.innerHTML = '<option value="">全部</option>' + DS.listHosts().map((h) => `<option value="${esc(h.id)}">${esc(h.name)}</option>`).join("");
+    }
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function refreshMetrics() {
+      const m = DS.opsMetrics();
+      document.querySelectorAll("#dsOpsMetrics [data-m]").forEach((el) => {
+        el.textContent = m[el.dataset.m] ?? 0;
+      });
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) {
+        html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      }
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("dsOpsPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = DS.listOpsEvents({
+        category: f.category || undefined,
+        hostId: f.hostId || undefined,
+        riskLevel: f.riskLevel || undefined,
+        keyword: f.keyword || undefined,
+        dateFrom: f.dateFrom || undefined,
+        dateTo: f.dateTo || undefined,
+      });
+      renderPager(filtered.length);
+      const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("dsOpsBody").innerHTML = pageRows.map((row) => {
+        const host = DS.getHost(row.hostId);
+        const risk = DS.riskTag(row.riskLevel);
+        const sign = DS.signTag(row.sign);
+        const handle = DS.handleTag(row.handleStatus);
+        const markBtn = row.handleStatus === "open"
+          ? `<button class="table-action" type="button" data-row="done" data-id="${esc(row.id)}">标记已处理</button>`
+          : "";
+        return `<tr>
+          <td>${dash(row.time)}</td>
+          <td>${dash(host?.name)}</td>
+          <td>${esc(DS.CATEGORY_LABEL[row.category] || row.category)}</td>
+          <td>${dash(row.summary)}</td>
+          <td>${dash(row.account)}</td>
+          <td>${tagHtml(risk)}</td>
+          <td>${sign ? tagHtml(sign) : "-"}</td>
+          <td>${tagHtml(handle)}</td>
+          <td class="user-actions-col">
+            <button class="table-action" type="button" data-row="detail" data-id="${esc(row.id)}">详情</button>
+            ${markBtn}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+      refreshMetrics();
+    }
+
+    function infoItem(label, value) {
+      return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    }
+
+    function openDetail(id) {
+      const row = DS.getOpsEvent(id);
+      if (!row) return;
+      const host = DS.getHost(row.hostId);
+      const detail = row.detail || {};
+      const extra = Object.keys(detail).length
+        ? Object.entries(detail).map(([k, v]) => infoItem(DETAIL_LABELS[k] || k, dash(typeof v === "object" ? JSON.stringify(v) : v))).join("")
+        : infoItem("扩展字段", "-");
+      const body = `
+        <section class="detail-section">
+          <h3 class="detail-title">基础信息</h3>
+          <div class="detail-grid user-detail-grid">
+            ${infoItem("时间", dash(row.time))}
+            ${infoItem("终端", dash(host?.name))}
+            ${infoItem("终端IP", dash(host?.ip))}
+            ${infoItem("行为类型", esc(DS.CATEGORY_LABEL[row.category] || row.category))}
+            ${infoItem("摘要", dash(row.summary))}
+            ${infoItem("账号", dash(row.account))}
+            ${infoItem("风险等级", tagHtml(DS.riskTag(row.riskLevel)))}
+            ${infoItem("失陷迹象", (() => { const s = DS.signTag(row.sign); return s ? tagHtml(s) : "-"; })())}
+            ${infoItem("处置状态", tagHtml(DS.handleTag(row.handleStatus)))}
+            ${extra}
+            ${infoItem("备注信息", "-")}
+          </div>
+        </section>`;
+      window.openAppDrawer({ title: "操作事件详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    fillFilters();
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") {
+        document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; });
+        currentPage = 1;
+        render();
+      }
+      if (action === "refresh") render();
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        if (rowBtn.dataset.row === "detail") openDetail(rowBtn.dataset.id);
+        if (rowBtn.dataset.row === "done") {
+          DS.markOpsEventDone(rowBtn.dataset.id);
+          render();
+        }
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

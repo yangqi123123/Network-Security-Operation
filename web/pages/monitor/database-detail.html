@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据库详情 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+</head>
+<body class="dbm-page" data-menu-key="monitor.database" data-page-section="性能监测" data-page-title="数据库详情">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack" id="dbmDetailRoot"></div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/database-monitor-mock.js"></script>
+  <script>
+    const DM = window.DatabaseMonitor;
+    const params = new URLSearchParams(location.search);
+    let inst = DM.getInstance(params.get("id"));
+    let trendChart = null;
+    let slowChart = null;
+    const root = document.getElementById("dbmDetailRoot");
+
+    function spaceStatus(row) {
+      if (!inst.online) return { label: "离线", tagClass: "muted" };
+      return row.usage >= row.threshold ? { label: "告警", tagClass: "danger" } : { label: "正常", tagClass: "success" };
+    }
+
+    function paint() {
+      if (!inst) {
+        root.innerHTML = `
+          <section class="page-head">
+            <div><h1 class="page-title">数据库详情</h1><p class="page-desc">未找到指定实例。</p></div>
+            <div class="btn-row"><a class="btn btn-secondary" href="./database.html"><i class="fa-solid fa-arrow-left"></i> 返回列表</a></div>
+          </section>
+          <section class="card pad"><p class="helper-text">请从数据库监测管理列表重新进入。</p></section>`;
+        return;
+      }
+
+      const st = DM.getStatus(inst);
+      const group = DM.typeGroup(inst.type);
+      document.body.dataset.pageTitle = inst.name;
+      const sqlTitle = group === "Oracle" ? "TOP SQL" : group === "MySQL" ? "慢 SQL 摘要" : "高消耗语句";
+      const spaceTitle = group === "Oracle" ? "表空间" : group === "SQL Server" ? "数据库文件占用" : "数据目录占用";
+
+      const swapHtml = inst.swapUsage != null
+        ? `<div class="sm-cpu-metrics dbm-swap-metrics">
+            <div class="sm-cpu-metric"><div class="label">交换分区使用率</div><div class="value">${inst.swapUsage}%</div></div>
+            <div class="sm-cpu-metric"><div class="label">会话数 / 阈值</div><div class="value">${inst.sessions} / ${inst.sessionThreshold}</div></div>
+            <div class="sm-cpu-metric"><div class="label">表空间阈值</div><div class="value">${inst.spaceThreshold}%</div></div>
+          </div>`
+        : `<div class="sm-cpu-metrics dbm-swap-metrics">
+            <div class="sm-cpu-metric"><div class="label">会话/连接 / 阈值</div><div class="value">${inst.online ? inst.sessions : "—"} / ${inst.sessionThreshold}</div></div>
+            <div class="sm-cpu-metric"><div class="label">空间使用 / 阈值</div><div class="value">${inst.online ? inst.spaceUsage + "%" : "—"} / ${inst.spaceThreshold}%</div></div>
+            <div class="sm-cpu-metric"><div class="label">慢查询数</div><div class="value">${inst.online ? inst.slowQueries : "—"}</div></div>
+          </div>`;
+
+      root.innerHTML = `
+        <div class="sm-page-nav">
+          <a class="btn btn-secondary" href="./database.html"><i class="fa-solid fa-arrow-left"></i> 返回列表</a>
+          <div class="btn-row">
+            <span class="tag">${inst.type}</span>
+            <span class="tag">${inst.ip}:${inst.port}</span>
+            <span class="tag ${st.tagClass}">${st.label}</span>
+          </div>
+        </div>
+
+        <section class="page-head">
+          <div>
+            <h1 class="page-title">${inst.name}</h1>
+            <p class="page-desc">${group} 数据库运行状态与性能专项监测。</p>
+          </div>
+        </section>
+
+        <section class="card pad">
+          <div class="card-title-row"><h2 class="card-title">实例信息</h2></div>
+          <div class="sm-info-grid">
+            <div class="info-item"><span class="info-label">实例名称</span><span class="info-value">${inst.name}</span></div>
+            <div class="info-item"><span class="info-label">库类型</span><span class="info-value">${inst.type}</span></div>
+            <div class="info-item"><span class="info-label">版本</span><span class="info-value">${inst.version}</span></div>
+            <div class="info-item"><span class="info-label">所属主机</span><span class="info-value">${inst.host}</span></div>
+            <div class="info-item"><span class="info-label">端口</span><span class="info-value">${inst.port}</span></div>
+            <div class="info-item"><span class="info-label">最近采样</span><span class="info-value">${inst.sampledAt}</span></div>
+            <div class="info-item"><span class="info-label">表空间/磁盘阈值</span><span class="info-value">${inst.spaceThreshold}%</span></div>
+            <div class="info-item"><span class="info-label">会话/连接阈值</span><span class="info-value">${inst.sessionThreshold}</span></div>
+          </div>
+        </section>
+
+        <p class="sm-threshold-line">状态判定：空间 ≥ ${inst.spaceThreshold}% 或 会话 ≥ ${inst.sessionThreshold} → 告警　·　当前 <span class="tag ${st.tagClass}">${st.label}</span></p>
+        ${swapHtml}
+
+        <h2 class="sm-section-title">运行概览</h2>
+        <div class="sm-cpu-charts">
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>会话/连接与空间使用率</h3></div>
+            <div class="sm-chart-el" id="dbmTrendChart"></div>
+          </article>
+          <article class="sm-chart-card card">
+            <div class="sm-chart-head"><h3>${group === "MySQL" ? "慢查询趋势" : "资源消耗趋势"}</h3></div>
+            <div class="sm-chart-el" id="dbmSlowChart"></div>
+          </article>
+        </div>
+
+        <section class="card user-list-card">
+          <div class="card-title-row"><h2 class="card-title">${spaceTitle}</h2></div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead><tr><th>名称</th><th>使用率</th><th>阈值</th><th>状态</th></tr></thead>
+              <tbody>
+                ${(inst.tablespaces || []).map((t) => {
+                  const s = spaceStatus(t);
+                  return `<tr><td>${t.name}</td><td>${inst.online ? t.usage + "%" : "—"}</td><td>${t.threshold}%</td><td><span class="tag ${s.tagClass}">${s.label}</span></td></tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row"><h2 class="card-title">${sqlTitle}</h2></div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead><tr><th>SQL 摘要</th><th>耗时(ms)</th><th>执行次数</th><th>CPU(ms)</th></tr></thead>
+              <tbody>
+                ${(inst.topSql || []).map((s) => `<tr><td title="${s.sql}">${s.sql.length > 64 ? s.sql.slice(0, 64) + "…" : s.sql}</td><td>${s.elapsedMs}</td><td>${s.execCount}</td><td>${s.cpuMs}</td></tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row"><h2 class="card-title">${group === "Oracle" ? "锁争用 / 死锁" : "锁等待 / 阻塞摘要"}</h2></div>
+          <div class="table-wrap">
+            <table class="table user-table">
+              <thead><tr><th>时间</th><th>类型</th><th>详情</th></tr></thead>
+              <tbody>
+                ${(inst.locks || []).length
+                  ? inst.locks.map((l) => `<tr><td>${l.time}</td><td>${l.type}</td><td>${l.detail}</td></tr>`).join("")
+                  : `<tr><td colspan="3">暂无锁等待记录</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </section>`;
+
+      trendChart?.dispose?.();
+      slowChart?.dispose?.();
+      trendChart = echarts.init(document.getElementById("dbmTrendChart"));
+      slowChart = echarts.init(document.getElementById("dbmSlowChart"));
+      trendChart.setOption(DM.dualTrendOption(inst));
+      slowChart.setOption(DM.areaOption(inst.series.slow.times, inst.series.slow.values, group === "MySQL" ? "次" : "指数"));
+
+    }
+
+    paint();
+    window.addEventListener("resize", () => {
+      trendChart?.resize();
+      slowChart?.resize();
+    });
+  </script>
+</body>
+</html>

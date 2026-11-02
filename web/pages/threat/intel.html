@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>威胁情报应用 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <link rel="stylesheet" href="../../assets/css/threat.css">
+</head>
+<body class="threat-page intel-page" data-menu-key="threat.intel" data-page-section="威胁监测与响应" data-page-title="威胁情报应用">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack">
+        <section class="card filters">
+          <div class="filter-actions">
+            <label class="form-field"><span class="form-label">对象类型</span>
+              <select class="form-control" data-filter="objectType"><option value="">全部</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">来源</span>
+              <select class="form-control" data-filter="source">
+                <option value="">全部</option>
+                <option>外部威胁情报</option><option>本地黑白名单</option><option>行业情报</option>
+                <option>监管通报</option><option>攻击组织画像</option><option>内部事件沉淀</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">可信度</span>
+              <select class="form-control" data-filter="confidence"><option value="">全部</option><option>高</option><option>中</option><option>低</option></select>
+            </label>
+            <label class="form-field"><span class="form-label">处置状态</span>
+              <select class="form-control" data-filter="disposeStatus">
+                <option value="">全部</option>
+                <option>待处置</option><option>已封禁</option><option>已加白</option><option>误报</option><option>已生成规则</option>
+              </select>
+            </label>
+            <label class="form-field"><span class="form-label">关键字</span>
+              <input class="form-control" data-filter="keyword" placeholder="情报对象/资产">
+            </label>
+            <button class="btn btn-secondary" type="button" data-action="reset">重置</button>
+            <button class="btn btn-primary" type="button" data-action="search">搜索</button>
+          </div>
+        </section>
+
+        <section class="card user-list-card">
+          <div class="card-title-row user-toolbar">
+            <h2 class="card-title">威胁情报列表</h2>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-action="export"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-primary" type="button" data-action="create"><i class="fa-solid fa-plus"></i> 新增情报</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table user-table table-actions-sticky">
+              <thead>
+                <tr>
+                  <th>情报对象</th><th>类型</th><th>来源</th><th>可信度</th><th>有效期</th><th>命中次数</th><th>影响资产</th><th>处置状态</th><th class="user-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="intelBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="intelPager"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/threat-mock.js"></script>
+  <script>
+    const T = window.Threat;
+    const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const dash = (v) => (v == null || v === "" ? "-" : esc(v));
+    const tagHtml = (meta) => {
+      if (!meta || !meta.label) return "-";
+      const cls = meta.tagClass ? `tag ${meta.tagClass}` : "tag";
+      return `<span class="${cls}">${esc(meta.label)}</span>`;
+    };
+    const infoItem = (label, value) => `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
+    let filtered = [];
+    let currentPage = 1;
+    const pageSize = 10;
+
+    document.querySelector("[data-filter='objectType']").innerHTML = '<option value="">全部</option>' + T.OBJECT_TYPES.map((v) => `<option>${esc(v)}</option>`).join("");
+
+    function readFilter() {
+      return Object.fromEntries([...document.querySelectorAll("[data-filter]")].map((el) => [el.dataset.filter, el.value.trim()]));
+    }
+
+    function renderPager(total) {
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      let html = `<span>共 <strong>${total}</strong> 条记录，每页 10 条</span>`;
+      html += `<span class="page-item${currentPage === 1 ? " disabled" : ""}" data-page-action="prev">‹</span>`;
+      for (let i = 1; i <= pages; i += 1) html += `<span class="page-item${i === currentPage ? " active" : ""}" data-page-number="${i}">${i}</span>`;
+      html += `<span class="page-item${currentPage === pages ? " disabled" : ""}" data-page-action="next">›</span>`;
+      document.getElementById("intelPager").innerHTML = html;
+    }
+
+    function render() {
+      const f = readFilter();
+      filtered = T.listIntel({
+        objectType: f.objectType || undefined,
+        source: f.source || undefined,
+        confidence: f.confidence || undefined,
+        disposeStatus: f.disposeStatus || undefined,
+        keyword: f.keyword || undefined,
+      });
+      renderPager(filtered.length);
+      const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      document.getElementById("intelBody").innerHTML = rows.map((i) => `<tr>
+        <td>${dash(i.value)}</td><td>${dash(i.objectType)}</td><td>${dash(i.source)}</td>
+        <td>${tagHtml(T.confidenceTag(i.confidence))}</td><td>${dash(i.expireAt)}</td><td>${dash(i.hitCount)}</td>
+        <td>${dash(i.assets)}</td><td>${tagHtml(T.disposeTag(i.disposeStatus))}</td>
+        <td class="user-actions-col">
+          <button class="table-action" type="button" data-row="detail" data-id="${esc(i.id)}">详情</button>
+          <button class="table-action" type="button" data-row="rule" data-id="${esc(i.id)}">生成检测规则</button>
+          <button class="table-action" type="button" data-row="ban" data-id="${esc(i.id)}">联动封禁</button>
+          <button class="table-action" type="button" data-row="false" data-id="${esc(i.id)}">误报反馈</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>`;
+    }
+
+    function openDetail(id) {
+      const i = T.getIntel(id);
+      if (!i) return;
+      const body = `<section class="detail-section"><h3 class="detail-title">基础信息</h3><div class="detail-grid user-detail-grid">
+        ${infoItem("情报对象", dash(i.value))}${infoItem("类型", dash(i.objectType))}${infoItem("来源", dash(i.source))}
+        ${infoItem("可信度", tagHtml(T.confidenceTag(i.confidence)))}${infoItem("有效期", dash(i.expireAt))}
+        ${infoItem("命中次数", dash(i.hitCount))}${infoItem("影响资产", dash(i.assets))}
+        ${infoItem("处置状态", tagHtml(T.disposeTag(i.disposeStatus)))}${infoItem("处置建议", dash(i.advice))}
+        ${infoItem("备注信息", "-")}
+      </div></section>`;
+      window.openAppDrawer({ title: "情报详情", body, footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button>' });
+    }
+
+    function openCreate() {
+      const body = `
+        <label class="form-field form-item"><span class="form-label form-required">情报对象</span><input class="form-control" data-f="value" placeholder="IP/域名/哈希等"></label>
+        <label class="form-field form-item"><span class="form-label form-required">对象类型</span>
+          <select class="form-control" data-f="objectType">${T.OBJECT_TYPES.map((v) => `<option>${esc(v)}</option>`).join("")}</select></label>
+        <label class="form-field form-item"><span class="form-label">来源</span>
+          <select class="form-control" data-f="source"><option>本地黑白名单</option><option>外部威胁情报</option><option>行业情报</option><option>监管通报</option></select></label>
+        <label class="form-field form-item"><span class="form-label">可信度</span>
+          <select class="form-control" data-f="confidence"><option>高</option><option selected>中</option><option>低</option></select></label>
+        <label class="form-field form-item"><span class="form-label">有效期</span><input class="form-control" data-f="expireAt" value="2026-12-31"></label>
+        <label class="form-field form-item"><span class="form-label">处置建议</span><textarea class="form-control textarea" data-f="advice"></textarea></label>`;
+      window.openAppDrawer({
+        title: "新增情报",
+        body,
+        footer: '<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-confirm-create>确认</button>',
+      });
+    }
+
+    function openFalse(id) {
+      const body = `<label class="form-field form-item"><span class="form-label form-required">误报说明</span><textarea class="form-control textarea" data-f="remark" placeholder="请输入"></textarea></label>`;
+      window.openAppDrawer({
+        title: "误报反馈",
+        body,
+        footer: `<button class="btn btn-secondary" type="button" data-drawer-close>取消</button><button class="btn btn-primary" type="button" data-confirm-false="${esc(id)}">确认</button>`,
+      });
+    }
+
+    render();
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "search") { currentPage = 1; render(); }
+      if (action === "reset") { document.querySelectorAll("[data-filter]").forEach((el) => { el.value = ""; }); currentPage = 1; render(); }
+      if (action === "export") alert("导出功能为原型演示，当前不会生成真实文件。");
+      if (action === "create") openCreate();
+
+      const rowBtn = event.target.closest("[data-row]");
+      if (rowBtn) {
+        const id = rowBtn.dataset.id;
+        if (rowBtn.dataset.row === "detail") openDetail(id);
+        if (rowBtn.dataset.row === "rule") { T.generateRule(id); alert("已生成检测规则（Mock）"); render(); }
+        if (rowBtn.dataset.row === "ban") { T.banIntel(id); render(); }
+        if (rowBtn.dataset.row === "false") openFalse(id);
+      }
+
+      if (event.target.closest("[data-confirm-create]")) {
+        const drawer = document.querySelector(".drawer-body") || document.getElementById("drawerBody");
+        const payload = Object.fromEntries([...(drawer?.querySelectorAll("[data-f]") || [])].map((el) => [el.dataset.f, el.value.trim()]));
+        if (!payload.value) { alert("请填写情报对象"); return; }
+        T.saveIntel(payload);
+        document.querySelector("[data-drawer-close]")?.click();
+        currentPage = 1;
+        render();
+      }
+
+      const falseBtn = event.target.closest("[data-confirm-false]");
+      if (falseBtn) {
+        const drawer = document.querySelector(".drawer-body") || document.getElementById("drawerBody");
+        const remark = drawer?.querySelector("[data-f='remark']")?.value || "误报反馈";
+        T.feedbackFalsePositive(falseBtn.dataset.confirmFalse, remark);
+        document.querySelector("[data-drawer-close]")?.click();
+        render();
+      }
+
+      const pageNum = event.target.closest("[data-page-number]");
+      if (pageNum) { currentPage = Number(pageNum.dataset.pageNumber); render(); }
+      const pageAct = event.target.closest("[data-page-action]")?.dataset.pageAction;
+      if (pageAct === "prev" && currentPage > 1) { currentPage -= 1; render(); }
+      if (pageAct === "next") {
+        const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage < pages) { currentPage += 1; render(); }
+      }
+    });
+  </script>
+</body>
+</html>

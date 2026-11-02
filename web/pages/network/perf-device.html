@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备监测详情 - 网络安全运维管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/tob-ui.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body class="pm-page" data-menu-key="network.perf-monitor" data-page-section="性能监测" data-page-title="设备监测详情">
+  <div class="app-shell">
+    <aside id="app-sidebar" class="sidebar"></aside>
+    <header id="app-header" class="header"></header>
+    <main class="main">
+      <div class="screen-frame stack pm-screen">
+        <section class="fault-banner" id="pmBanner"></section>
+        <section class="pm-overview" id="pmOverview"></section>
+        <nav class="pm-tabs" id="pmTabs">
+          <button type="button" class="active" data-tab="realtime">实时性能</button>
+          <button type="button" data-tab="ports">端口详情</button>
+          <button type="button" data-tab="route">路由分析</button>
+          <button type="button" data-tab="history">历史数据</button>
+        </nav>
+        <section class="card pm-tab-panel" id="pmPanel"></section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../../app/config/menu.js"></script>
+  <script src="../../../app/components/sidebar.js"></script>
+  <script src="../../../app/components/header.js"></script>
+  <script src="../../../app/components/drawer.js"></script>
+  <script src="../../../app/components/requirement.js"></script>
+  <script src="../../../app/data/perf-monitor-mock.js"></script>
+  <script>
+    (function () {
+      const PM = window.PerfMonitor;
+      const params = new URLSearchParams(location.search);
+      const deviceId = params.get("id") || "D001";
+      let device = PM.getDevice(deviceId);
+      let activeTab = "realtime";
+      let historyRange = "7d";
+      const charts = [];
+
+      document.title = `${device.name} - 网络安全运维管理平台`;
+      document.body.dataset.pageTitle = device.name;
+
+      function disposeCharts() {
+        charts.splice(0).forEach((c) => c.dispose());
+      }
+
+      function lineOption(title, series) {
+        return {
+          title: { text: title, left: 0, textStyle: { color: "#334155", fontSize: 13 } },
+          grid: { left: 40, right: 16, top: 40, bottom: 28 },
+          tooltip: { trigger: "axis" },
+          xAxis: { type: "category", data: series.map((p) => p.t), axisLabel: { color: "#86909c" } },
+          yAxis: { type: "value", axisLabel: { color: "#86909c" }, splitLine: { lineStyle: { color: "#e5eaf3" } } },
+          series: [{ type: "line", smooth: true, data: series.map((p) => p.v), areaStyle: { opacity: 0.12 }, itemStyle: { color: "#1E90FF" } }],
+        };
+      }
+
+      function mountChart(el, option) {
+        const chart = echarts.init(el);
+        chart.setOption(option);
+        charts.push(chart);
+        return chart;
+      }
+
+      function warnClass(v) {
+        if (v >= 90) return "is-danger";
+        if (v >= 75) return "is-warn";
+        return "";
+      }
+
+      function renderBanner() {
+        const online = device.status !== "offline";
+        document.getElementById("pmBanner").innerHTML = `
+          <div class="fault-banner-main">
+            <div class="fault-banner-icon" aria-hidden="true"><i class="fa-solid fa-server"></i></div>
+            <div class="fault-banner-copy">
+              <div class="fault-banner-title-row">
+                <h2 class="fault-banner-name">${device.name} <span class="fault-banner-ip">(${device.ip})</span></h2>
+                <span class="fault-online-tag ${online ? "" : "is-offline"}">${online ? "在线" : "离线"}</span>
+              </div>
+              <p class="fault-banner-meta">
+                设备类型：${device.type}
+                <span class="fault-meta-sep">设备协议：${device.protocol}</span>
+                <span class="fault-meta-sep">告警数：<strong class="fault-alarm-count">${device.alarmCount}</strong></span>
+              </p>
+            </div>
+          </div>
+          <a class="fault-text-link" href="perf-monitor.html">返回列表 &gt;</a>`;
+      }
+
+      function renderOverview() {
+        document.getElementById("pmOverview").innerHTML = [
+          ["CPU%", device.cpu, warnClass(device.cpu)],
+          ["内存%", device.mem, warnClass(device.mem)],
+          ["可用性", `${device.availability}%`, ""],
+          ["端口", `${device.portUp}↑ / ${device.portDown}↓`, device.portDown ? "is-warn" : ""],
+        ]
+          .map(
+            ([label, value, cls]) =>
+              `<article class="pm-overview-card ${cls}"><div class="pm-metric-label">${label}</div><div class="pm-metric-value">${value}</div></article>`
+          )
+          .join("");
+      }
+
+      function renderRealtime() {
+        disposeCharts();
+        const data = PM.getRealtime(device.id);
+        const ports = PM.getPorts(device.id);
+        document.getElementById("pmPanel").innerHTML = `
+          <div class="card-title-row">
+            <h3 class="card-title">实时性能</h3>
+            <div class="btn-row">
+              <label class="form-field pm-inline-field"><span class="form-label">端口</span>
+                <select class="form-control" id="pmPortSelect">
+                  ${ports.map((p) => `<option value="${p.id}">${p.name}</option>`).join("")}
+                </select>
+              </label>
+              <button class="btn btn-secondary" type="button" id="pmRefreshRt">刷新</button>
+            </div>
+          </div>
+          <div class="pm-chart-grid">
+            <div class="pm-chart" id="chartCpu"></div>
+            <div class="pm-chart" id="chartMem"></div>
+            <div class="pm-chart" id="chartTp"></div>
+          </div>`;
+        mountChart(document.getElementById("chartCpu"), lineOption("CPU 利用率 (%)", data.cpu));
+        mountChart(document.getElementById("chartMem"), lineOption("内存利用率 (%)", data.mem));
+        mountChart(document.getElementById("chartTp"), lineOption("接口吞吐 (Mbps)", data.throughput));
+        document.getElementById("pmRefreshRt").onclick = () => {
+          PM.refreshRealtime(device.id);
+          device = PM.getDevice(device.id);
+          renderOverview();
+          renderRealtime();
+        };
+        document.getElementById("pmPortSelect").onchange = () => {
+          const portName = document.getElementById("pmPortSelect").selectedOptions[0]?.text || "";
+          charts[2]?.setOption(lineOption(`接口吞吐 - ${portName} (Mbps)`, PM.getRealtime(device.id).throughput));
+        };
+      }
+
+      function renderPorts() {
+        disposeCharts();
+        const ports = PM.getPorts(device.id);
+        document.getElementById("pmPanel").innerHTML = `
+          <div class="card-title-row"><h3 class="card-title">端口详情</h3></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr>
+              <th>端口名</th><th>管理状态</th><th>操作状态</th><th>发送速率</th><th>接收速率</th>
+              <th>ICMP包率</th><th>通断</th><th>发送包率</th><th>接收包率</th>
+            </tr></thead>
+            <tbody>${ports
+              .map(
+                (p) => `<tr>
+                <td>${p.name}</td><td>${p.adminStatus}</td>
+                <td><span class="tag ${p.operStatus === "up" ? "success" : "danger"}">${p.operStatus}</span></td>
+                <td>${p.txRate} Mbps</td><td>${p.rxRate} Mbps</td>
+                <td>${p.icmpRate}</td>
+                <td>${p.operStatus === "up" ? "通" : "断"}</td>
+                <td>${p.txPktRate}</td><td>${p.rxPktRate}</td>
+              </tr>`
+              )
+              .join("")}</tbody>
+          </table></div>`;
+      }
+
+      function showToolResult(result) {
+        const out = document.getElementById("pmToolOut");
+        if (!out) return;
+        if (result.rows) {
+          const keys = Object.keys(result.rows[0] || {});
+          out.innerHTML = `<h4 class="pm-tool-title">${result.title}</h4>
+            <div class="table-wrap"><table class="table"><thead><tr>${keys.map((k) => `<th>${k}</th>`).join("")}</tr></thead>
+            <tbody>${result.rows.map((r) => `<tr>${keys.map((k) => `<td>${r[k]}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+        } else {
+          out.innerHTML = `<h4 class="pm-tool-title">${result.title}</h4><pre class="pm-pre">${result.text || ""}</pre>`;
+        }
+      }
+
+      function renderRoute() {
+        disposeCharts();
+        document.getElementById("pmPanel").innerHTML = `
+          <div class="card-title-row"><h3 class="card-title">路由分析工具</h3></div>
+          <div class="pm-tool-bar">
+            <button class="btn btn-secondary" type="button" data-tool="ping">Ping</button>
+            <button class="btn btn-secondary" type="button" data-tool="arp">ARP 表</button>
+            <button class="btn btn-secondary" type="button" data-tool="route">路由表</button>
+            <button class="btn btn-secondary" type="button" data-tool="trace">TraceRoute</button>
+            <button class="btn btn-secondary" type="button" data-tool="tcp">TCP 端口</button>
+            <button class="btn btn-secondary" type="button" data-tool="url">URL 检测</button>
+            <button class="btn btn-secondary" type="button" data-tool="cmd">自定义命令</button>
+          </div>
+          <div id="pmToolOut" class="pm-tool-out"><p class="panel-helper">点击上方按钮查看 Mock 结果</p></div>`;
+        document.querySelectorAll("[data-tool]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const kind = btn.dataset.tool;
+            let extra = {};
+            if (kind === "trace") extra = { target: prompt("目标 IP", "8.8.8.8") || "8.8.8.8" };
+            if (kind === "tcp") extra = { port: Number(prompt("TCP 端口", "22") || 22) };
+            if (kind === "url") extra = { url: prompt("URL", "https://example.com") || "https://example.com" };
+            if (kind === "cmd") extra = { cmd: prompt("命令", "display version") || "display version" };
+            showToolResult(PM.runTool(device.id, kind, extra));
+          });
+        });
+      }
+
+      function renderHistory() {
+        disposeCharts();
+        const ranges = [
+          ["1h", "1小时"],
+          ["7d", "7天"],
+          ["14d", "14天"],
+          ["30d", "30天"],
+          ["365d", "365天"],
+          ["custom", "自定义"],
+        ];
+        const data = PM.getHistory(device.id, historyRange === "custom" ? "30d" : historyRange);
+        document.getElementById("pmPanel").innerHTML = `
+          <div class="card-title-row">
+            <h3 class="card-title">历史数据</h3>
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="button" data-export="xls">导出 xls</button>
+              <button class="btn btn-secondary" type="button" data-export="pdf">导出 pdf</button>
+            </div>
+          </div>
+          <div class="pm-range-bar">
+            ${ranges
+              .map(
+                ([k, label]) =>
+                  `<button type="button" class="pm-range-btn ${historyRange === k ? "active" : ""}" data-range="${k}">${label}</button>`
+              )
+              .join("")}
+            <span id="pmCustomRange" class="pm-custom-range ${historyRange === "custom" ? "" : "hidden"}">
+              <input class="form-control" type="date" id="pmFrom">
+              <span>—</span>
+              <input class="form-control" type="date" id="pmTo">
+            </span>
+          </div>
+          <div class="pm-chart-grid">
+            <div class="pm-chart" id="histAvail"></div>
+            <div class="pm-chart" id="histCpu"></div>
+            <div class="pm-chart" id="histMem"></div>
+          </div>`;
+        mountChart(document.getElementById("histAvail"), lineOption("可用性 (%)", data.availability));
+        mountChart(document.getElementById("histCpu"), lineOption("CPU (%)", data.cpu));
+        mountChart(document.getElementById("histMem"), lineOption("内存 (%)", data.mem));
+        document.querySelectorAll("[data-range]").forEach((btn) => {
+          btn.onclick = () => {
+            historyRange = btn.dataset.range;
+            renderHistory();
+          };
+        });
+        document.querySelectorAll("[data-export]").forEach((btn) => {
+          btn.onclick = () => {
+            const ext = btn.dataset.export;
+            window.openAppDrawer({
+              title: "导出",
+              body: `<p>已生成 Mock 文件 <strong>device-${device.id}-history.${ext}</strong>（演示，无真实下载）</p>`,
+              footer: `<button class="btn btn-primary" type="button" data-drawer-close>知道了</button>`,
+            });
+          };
+        });
+      }
+
+      function renderTab() {
+        if (activeTab === "realtime") renderRealtime();
+        else if (activeTab === "ports") renderPorts();
+        else if (activeTab === "route") renderRoute();
+        else renderHistory();
+      }
+
+      document.getElementById("pmTabs").addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-tab]");
+        if (!btn) return;
+        activeTab = btn.dataset.tab;
+        document.querySelectorAll("#pmTabs [data-tab]").forEach((el) => el.classList.toggle("active", el === btn));
+        renderTab();
+      });
+
+      window.addEventListener("resize", () => charts.forEach((c) => c.resize()));
+
+      renderBanner();
+      renderOverview();
+      renderTab();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+/* 安全运营业务页：模板块、超时标记；不改 .main padding-top */
+.secops-template-block {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--primary-bg, #f5f8fc);
+  border: 1px solid var(--divider, #e5eaf2);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.secops-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.secops-overdue {
+  color: var(--danger, #e34d59);
+  font-weight: 600;
+}
+.secops-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+.secops-compare .secops-template-block {
+  min-height: 72px;
+}
+[data-theme="dark"] .secops-template-block {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* 自动派单：处理人多选在表格单元格内 */
+.ticket-page .alarm-tag-select { min-width: 180px; }
+.ticket-page .alarm-tag-dropdown { z-index: 40; }
+[data-theme="dark"] .ticket-page .alarm-tag-control {
+  background: var(--bg-card, #0E1C3B);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #E8EEF8;
+}
+[data-theme="dark"] .ticket-page .alarm-tag-dropdown {
+  background: var(--bg-card, #0E1C3B);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .ticket-page .alarm-tag-option { color: #E8EEF8; }
+[data-theme="dark"] .ticket-page .alarm-tag-option:hover,
+[data-theme="dark"] .ticket-page .alarm-tag-option.selected {
+  background: rgba(19, 90, 250, 0.18);
+  color: #6EA8FF;
+}
+[data-theme="dark"] .ticket-page .alarm-selection-tag {
+  background: rgba(255, 255, 255, 0.08);
+  color: #E8EEF8;
+}
