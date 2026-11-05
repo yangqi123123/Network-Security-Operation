@@ -263,7 +263,7 @@
       id: "L002",
       name: "",
       type: "接入链路",
-      remark: "研发办公室主链路",
+      remark: "第一教学楼主链路",
       bandwidth: "1000 Mbps",
       viaDevices: [],
       locked: true,
@@ -282,7 +282,7 @@
       infoLayout: "monitor",
       source: {
         role: "source",
-        deviceName: "办公网核心交换机",
+        deviceName: "行政楼核心交换机",
         ip: "192.168.1.2",
         ifName: "GigabitEthernet0/0/1",
         slotNo: "无",
@@ -294,7 +294,7 @@
       },
       target: {
         role: "target",
-        deviceName: "研发办公室AP",
+        deviceName: "第一教学楼AP",
         ip: "192.168.1.254",
         ifName: "",
         slotNo: "无",

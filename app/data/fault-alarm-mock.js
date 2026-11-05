@@ -660,16 +660,16 @@
 
   // 与故障显示/拓扑打通：补齐区域、分层、探针、设备 id（不改变原有告警通知字段）
   const DOMAIN_META = {
-    核心机房: { region: "华东一区", layer: "核心层", probe: "华东核心探针-01" },
-    数据中心: { region: "华南二区", layer: "汇聚层", probe: "华南汇聚探针-02" },
-    核心网络: { region: "华东一区", layer: "核心层", probe: "华东核心探针-01" },
-    DMZ: { region: "华南二区", layer: "接入层", probe: "华南接入探针-05" },
-    办公区: { region: "西南三区", layer: "接入层", probe: "西南接入探针-07" },
-    边界网络: { region: "西南三区", layer: "汇聚层", probe: "西南汇聚探针-03" },
+    核心机房: { region: "行政楼", layer: "核心层", probe: "行政楼核心探针-01" },
+    数据中心: { region: "第一教学楼", layer: "汇聚层", probe: "第一教学楼汇聚探针-02" },
+    核心网络: { region: "行政楼", layer: "核心层", probe: "行政楼核心探针-01" },
+    DMZ: { region: "第一教学楼", layer: "接入层", probe: "第一教学楼接入探针-05" },
+    办公区: { region: "第2教学楼", layer: "接入层", probe: "第2教学楼接入探针-07" },
+    边界网络: { region: "第2教学楼", layer: "汇聚层", probe: "第2教学楼汇聚探针-03" },
   };
 
   alarms.forEach((item) => {
-    const meta = DOMAIN_META[item.domain] || { region: "华东一区", layer: "核心层", probe: "华东核心探针-01" };
+    const meta = DOMAIN_META[item.domain] || { region: "行政楼", layer: "核心层", probe: "行政楼核心探针-01" };
     if (!item.region) item.region = meta.region;
     if (!item.layer) item.layer = meta.layer;
     if (!item.probe) item.probe = meta.probe;

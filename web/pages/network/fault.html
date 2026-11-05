@@ -44,7 +44,7 @@
             </label>
             <label class="form-field">
               <span class="form-label">监控探针</span>
-              <input class="form-control" id="filterProbe" placeholder="如：华东核心探针">
+              <input class="form-control" id="filterProbe" placeholder="如：行政楼核心探针">
             </label>
             <div class="fault-filter-actions">
               <button class="btn btn-secondary" type="button" id="btnFilterReset">重置</button>
@@ -57,7 +57,7 @@
         <section class="fault-card">
           <div class="fault-card-head">
             <h3>网络告警拓扑图</h3>
-            <span class="fault-platform-hint">跨地域探针分层监控 · 节点告警数醒目展示 · 点击节点进入设备详情</span>
+            <span class="fault-platform-hint">跨楼宇探针分层监控 · 节点告警数醒目展示 · 点击节点进入设备详情</span>
           </div>
           <div class="fault-alarm-topo" id="alarmTopo">
             <div class="fault-alarm-topo-legend">
@@ -199,7 +199,7 @@
       function buildTopoModel(list) {
         const layers = ["核心层", "汇聚层", "接入层"];
         const regions = Array.from(new Set(list.map((a) => a.region).filter(Boolean)));
-        const useRegions = regions.length ? regions : ["华东一区", "华南二区", "西南三区"];
+        const useRegions = regions.length ? regions : ["行政楼", "第一教学楼", "第2教学楼"];
         // 列宽 / 节点间距需大于节点文案宽度，避免标签挤叠
         const COL_W = 360;
         const LEFT0 = 96;
@@ -246,7 +246,7 @@
                 name: `${layer}节点`,
                 region,
                 layer,
-                probe: `${region.slice(0, 2)}探针`,
+                probe: `${region}探针`,
                 count: 0,
                 worst: "正常",
                 empty: true,

@@ -66,9 +66,7 @@
     .topo-search:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(30, 111, 255, .12); }
     .topo-stage-wrap {
       position: relative; flex: 1; width: 100%; min-width: 0; min-height: 0; overflow: hidden;
-      background-color: #f5f8ff;
-      background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, .28) 1px, transparent 0);
-      background-size: 20px 20px;
+      background-color: #ffffff;
     }
     .topo-viewport {
       position: relative; width: 100%; height: 100%; min-width: 0; cursor: grab; overflow: hidden;
@@ -84,53 +82,50 @@
     .topo-svg .link-line {
       pointer-events: none; fill: none; stroke-linecap: round; stroke-linejoin: round;
     }
-    .topo-svg .link-line.access { stroke: #34d399; stroke-width: 1.5; }
-    .topo-svg .link-line.core { stroke: #1e6fff; stroke-width: 2; }
-    .topo-svg .link-line.fault { stroke: #ef4444; stroke-width: 2; }
+    .topo-svg .link-line.trunk { stroke: #1f3a5f; stroke-width: 2.5; }
+    .topo-svg .link-line.access { stroke: #3b82f6; stroke-width: 1.5; }
+    .topo-svg .link-line.fiber { stroke: #dc2626; stroke-width: 2; }
+    .topo-svg .link-line.copper { stroke: #dc2626; stroke-width: 1.8; stroke-dasharray: 6 4; }
+    .topo-svg .link-line.fault { stroke: #dc2626; stroke-width: 2.2; }
     .topo-svg .link-line.selected {
       stroke: #f59e0b; stroke-width: 2.5;
       filter: drop-shadow(0 0 4px rgba(245, 158, 11, .45));
     }
+    .topo-svg .link-label {
+      font-size: 10px; font-weight: 600; fill: #dc2626;
+      pointer-events: none; user-select: none;
+    }
     .topo-zone {
-      position: absolute; border: 1.5px dashed #bfdbfe; border-radius: 12px;
-      background: #f8fbff; pointer-events: none;
+      position: absolute; border: none; border-radius: 8px;
+      background: #f2f4f8; pointer-events: none;
     }
     .topo-zone-title {
-      position: absolute; top: -11px; left: 12px; height: 22px; padding: 0 10px;
-      display: inline-flex; align-items: center; border-radius: 999px;
-      font-size: 12px; font-weight: 600; color: #1e6fff; background: #fff;
-      border: 1px solid #bfdbfe; letter-spacing: .02em;
-      box-shadow: 0 1px 2px rgba(30, 111, 255, .08);
+      position: absolute; left: 0; right: 0; bottom: 14px;
+      text-align: center; font-size: 16px; font-weight: 700; color: #1f2937;
+      letter-spacing: .04em; pointer-events: none;
     }
     .topo-node {
-      position: absolute; width: 96px; transform: translate(-50%, -50%);
+      position: absolute; width: 108px; transform: translate(-50%, -50%);
       display: flex; flex-direction: column; align-items: center; gap: 6px;
       cursor: pointer; user-select: none; z-index: 2;
     }
     .topo-node .icon-wrap {
-      position: relative; width: 48px; height: 48px; border-radius: 12px;
+      position: relative; width: 40px; height: 40px; border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      background: #e6f7ee; border: 1.5px solid #86efac; color: #16a34a;
-      box-shadow: 0 2px 6px rgba(30, 111, 255, .12);
-      transition: transform .15s, box-shadow .15s, border-color .15s, background .15s, color .15s;
+      background: transparent; border: none; color: #fff;
+      transition: transform .15s, filter .15s;
     }
     .topo-node .icon-wrap svg {
-      width: 22px; height: 22px; display: block; flex-shrink: 0;
-      stroke: currentColor; stroke-width: 1.8; fill: none;
+      width: 40px; height: 40px; display: block; flex-shrink: 0;
     }
-    .topo-node.fault .icon-wrap { background: #fdecec; border-color: #fca5a5; color: #dc2626; }
-    .topo-node.fault .fault-dot {
-      position: absolute; top: -2px; right: -2px; width: 6px; height: 6px; border-radius: 50%;
-      background: #ef4444; box-shadow: 0 0 0 2px #fff;
-      animation: topoPulse 1.2s ease-in-out infinite;
-    }
+    .topo-node.fault .icon-wrap { filter: drop-shadow(0 0 0 transparent); }
     .topo-node .fault-badge {
-      position: absolute; top: -8px; right: -10px; min-width: 18px; height: 18px; padding: 0 4px;
+      position: absolute; top: -7px; right: -8px; min-width: 18px; height: 18px; padding: 0 4px;
       border-radius: 999px; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700;
       line-height: 18px; text-align: center; box-shadow: 0 0 0 2px #fff; z-index: 2;
     }
-    .topo-node .fault-badge.is-major { background: #f97316; }
-    .topo-node .fault-badge.is-minor { background: #eab308; color: #422006; }
+    .topo-node .fault-badge.is-major { background: #dc2626; }
+    .topo-node .fault-badge.is-minor { background: #dc2626; }
     .topo-alert-box {
       margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #fff7ed; border: 1px solid #fed7aa;
       color: #9a3412; font-size: 12px; line-height: 1.5;
@@ -141,19 +136,26 @@
       50% { transform: scale(1.35); opacity: .55; }
     }
     .topo-node.selected .icon-wrap {
-      background: #e8f1ff; border: 2px solid #1e6fff; color: #1e6fff;
-      box-shadow: 0 0 0 4px rgba(30, 111, 255, .18), 0 4px 14px rgba(30, 111, 255, .22);
+      filter: drop-shadow(0 0 0 3px rgba(30, 111, 255, .35));
+      outline: 2px solid #1e6fff; outline-offset: 2px; border-radius: 10px;
     }
     .topo-node.search-hit .icon-wrap {
-      box-shadow: 0 0 0 4px rgba(30, 111, 255, .22), 0 2px 6px rgba(30, 111, 255, .12);
+      filter: drop-shadow(0 0 6px rgba(30, 111, 255, .45));
     }
     .topo-node.dim { opacity: .28; }
-    .topo-node .label {
-      max-width: 96px; text-align: center; font-size: 12px; line-height: 1.25; color: #475569;
+    .topo-node .label-wrap {
+      max-width: 108px; text-align: center; line-height: 1.25;
+    }
+    .topo-node .label-name {
+      display: block; font-size: 12px; color: #1f2937; font-weight: 500;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .topo-node.fault .label { color: #b91c1c; font-weight: 600; }
-    .topo-node.selected .label { color: #1e40af; font-weight: 600; }
+    .topo-node .label-sub {
+      display: block; font-size: 11px; color: #64748b;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .topo-node.fault .label-name { color: #dc2626; font-weight: 600; }
+    .topo-node.selected .label-name { color: #1e40af; font-weight: 600; }
     .topo-zoom {
       position: absolute; top: 14px; right: 14px; z-index: 20;
       width: 44px; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -397,10 +399,16 @@
       switch: { icon: "network", label: "交换机" },
       firewall: { icon: "shield", label: "防火墙" },
       server: { icon: "server", label: "服务器" },
-      storage: { icon: "database", label: "磁盘阵列" },
+      storage: { icon: "database", label: "存储设备" },
       gatekeeper: { icon: "lock", label: "网闸" },
       cloud: { icon: "cloud", label: "外部网络" },
       core: { icon: "network", label: "核心交换机" },
+      ap: { icon: "wifi", label: "无线AP" },
+      camera: { icon: "camera", label: "摄像头" },
+      ups: { icon: "battery", label: "UPS" },
+      ac: { icon: "wifi", label: "AC控制器" },
+      olt: { icon: "network", label: "OLT" },
+      nvr: { icon: "database", label: "NVR" },
     };
 
     // Lucide 线性图标 path（内联渲染，避免 CDN createIcons 注入失败导致空白）
@@ -414,18 +422,29 @@
       database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
       lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
       cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
-      "monitor-cog": '<path d="M12 17v4"/><path d="m15.2 13.9-.9-.4"/><path d="m15.2 19.1-.9.4"/><path d="m16.9 14.6-.4-.9"/><path d="m16.9 18.4-.4.9"/><path d="m19.5 13.4-.2-.9"/><path d="m19.5 19.6-.2.9"/><path d="M22 13v6"/><path d="m8.8 13.9.9-.4"/><path d="m8.8 19.1.9.4"/><path d="m7.1 14.6.4-.9"/><path d="m7.1 18.4.4.9"/><path d="m4.5 13.4.2-.9"/><path d="m4.5 19.6.2.9"/><path d="M2 13v6"/><circle cx="12" cy="16.5" r="2.5"/><rect x="2" y="3" width="20" height="10" rx="2"/>',
+      wifi: '<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>',
+      camera: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+      battery: '<rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/><line x1="10" x2="10" y1="11" y2="13"/><line x1="14" x2="14" y1="11" y2="13"/>',
     };
 
+    function resolveIconType(node) {
+      if (node.iconType) return node.iconType;
+      const map = {
+        cloud: "cloud", firewall: "firewall", security: "box", core: "switch", switch: "switch",
+        ac: "ac", ap: "ap", server: "server", ups: "ups", terminal: "pc", printer: "printer",
+        storage: "cylinder", nvr: "cylinder", camera: "camera", olt: "switch", gatekeeper: "box",
+      };
+      return map[node.type] || "box";
+    }
+
     function resolveIcon(node) {
-      if (node.id === "maint-console") return "monitor-cog";
       return (TYPE_META[node.type] || TYPE_META.server).icon;
     }
 
     // 拓扑醒目报警 Mock：角标数量 + 最新告警摘要
     const NODE_ALERTS = {
-      "srv-cfg-1": { count: 3, level: "critical", summary: "配置应用服务进程异常退出，影响核心业务访问。" },
-      "srv-backup": { count: 2, level: "major", summary: "备份任务超时，磁盘写入延迟升高。" },
+      "srv-av": { count: 2, level: "major", summary: "防病毒特征库更新超时，部分终端防护策略未同步。" },
+      "nvr-2": { count: 3, level: "critical", summary: "监控安防区侧 NVR2 磁盘异常，监控回放中断。" },
     };
     function getNodeAlert(node) {
       if (!node) return null;
@@ -434,175 +453,172 @@
       return null;
     }
 
+    function deviceIconSvg(iconType, fault, uid) {
+      const top = fault ? "#ef4444" : "#3b82c4";
+      const mid = fault ? "#dc2626" : "#1f5fa8";
+      const bot = fault ? "#b91c1c" : "#164a86";
+      const gid = `g-${uid}`;
+      const body = (() => {
+        switch (iconType) {
+          case "cloud":
+            return `<path d="M28 28H12.5a7 7 0 1 1 6.3-9.2A6 6 0 1 1 28 28Z" fill="url(#${gid})" stroke="#fff" stroke-width="1.2"/>`;
+          case "firewall":
+            return `<rect x="6" y="8" width="28" height="24" rx="4" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M12 20h6M22 20h6M18 14v12M22 14v12" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><path d="M4 20h4M32 20h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>`;
+          case "ac":
+            return `<circle cx="20" cy="20" r="14" fill="url(#${gid})" stroke="#fff" stroke-width="1.2"/><circle cx="20" cy="20" r="4" fill="#fff"/><path d="M12 20h16M20 12v16" stroke="#fff" stroke-width="1.2" opacity=".7"/>`;
+          case "ap":
+            return `<circle cx="20" cy="22" r="11" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M14 18a8 8 0 0 1 12 0M16.5 20.5a4.5 4.5 0 0 1 7 0" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/><circle cx="20" cy="24" r="1.6" fill="#fff"/>`;
+          case "server":
+            return `<rect x="9" y="6" width="22" height="28" rx="3" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="12" y="10" width="16" height="5" rx="1" fill="#fff" opacity=".9"/><rect x="12" y="18" width="16" height="5" rx="1" fill="#fff" opacity=".75"/><rect x="12" y="26" width="16" height="5" rx="1" fill="#fff" opacity=".6"/><circle cx="26" cy="12.5" r="1.1" fill="${mid}"/>`;
+          case "ups":
+            return `<rect x="8" y="10" width="24" height="20" rx="3" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="30" y="16" width="3" height="8" rx="1" fill="#fff"/><path d="M15 16v8M20 14v12M25 16v8" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>`;
+          case "cylinder":
+            return `<ellipse cx="20" cy="10" rx="11" ry="4" fill="url(#${gid})" stroke="#fff" stroke-width="1"/><path d="M9 10v16c0 2.2 4.9 4 11 4s11-1.8 11-4V10" fill="url(#${gid})" stroke="#fff" stroke-width="1"/><ellipse cx="20" cy="26" rx="11" ry="4" fill="${bot}" stroke="#fff" stroke-width="1" opacity=".9"/>`;
+          case "camera":
+            return `<rect x="5" y="12" width="18" height="14" rx="3" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M23 15l9-4v14l-9-4z" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><circle cx="14" cy="19" r="3" fill="#fff"/>`;
+          case "pc":
+            return `<rect x="7" y="7" width="26" height="18" rx="2" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="10" y="10" width="20" height="12" rx="1" fill="#0b3a6b" opacity=".35"/><path d="M16 28h8M14 32h12" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>`;
+          case "laptop":
+            return `<rect x="8" y="9" width="24" height="15" rx="2" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M5 26h30l-3 4H8z" fill="${bot}" stroke="#fff" stroke-width="1"/>`;
+          case "smartphone":
+            return `<rect x="12" y="5" width="16" height="30" rx="3" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="15" y="9" width="10" height="18" rx="1" fill="#0b3a6b" opacity=".3"/><circle cx="20" cy="31" r="1.3" fill="#fff"/>`;
+          case "printer":
+            return `<path d="M12 8h16v6H12z" fill="${top}" stroke="#fff" stroke-width="1"/><rect x="8" y="14" width="24" height="12" rx="2" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="12" y="22" width="16" height="8" rx="1" fill="#fff" opacity=".85"/>`;
+          case "switch":
+          case "box":
+          default:
+            return `<rect x="5" y="9" width="30" height="22" rx="4" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><circle cx="11" cy="15" r="1.5" fill="#86efac"/><circle cx="16" cy="15" r="1.5" fill="#86efac"/><circle cx="21" cy="15" r="1.5" fill="#fbbf24"/><path d="M10 24h20M10 20h12" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>`;
+        }
+      })();
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+        <defs><linearGradient id="${gid}" x1="20" y1="4" x2="20" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stop-color="${top}"/><stop offset=".55" stop-color="${mid}"/><stop offset="1" stop-color="${bot}"/>
+        </linearGradient></defs>${body}</svg>`;
+    }
+
     function iconSvg(name) {
       const paths = LUCIDE_PATHS[name] || LUCIDE_PATHS.server;
       return `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
     }
 
+    function nodeSubLabel(node) {
+      if (node.ip && node.ip !== "-") return node.ip;
+      if (node.vlan) return node.vlan;
+      return node.model || node.zone || "-";
+    }
+
     const zones = [
-      { id: "z-dispatch", name: "调度管理区", x: 40, y: 36, w: 520, h: 290 },
-      { id: "z-maint", name: "维护作业管理区", x: 590, y: 36, w: 280, h: 290 },
-      { id: "z-sec", name: "维护作业管理区", x: 900, y: 36, w: 760, h: 290 },
-      { id: "z-biz", name: "核心业务管理区", x: 40, y: 620, w: 400, h: 400 },
-      { id: "z-collect", name: "数据采集区", x: 480, y: 620, w: 760, h: 420 },
+      { id: "z-dc", name: "数据机房区", x: 32, y: 20, w: 1580, h: 280 },
+      { id: "z-wifi", name: "无线区", x: 32, y: 340, w: 500, h: 700 },
+      { id: "z-office", name: "办公区", x: 556, y: 340, w: 540, h: 700 },
+      { id: "z-sec", name: "监控安防区", x: 1120, y: 340, w: 492, h: 700 },
     ];
 
     const nodes = [
-      // 调度管理区终端
-      { id: "dd-x1-01", name: "调度X1台-01", type: "terminal", zone: "调度管理区", status: "normal", x: 100, y: 100, ip: "10.10.1.11", mac: "00:1A:2B:10:01:01", model: "终端-X1" },
-      { id: "dd-x1-02", name: "调度X1台-02", type: "terminal", zone: "调度管理区", status: "normal", x: 180, y: 100, ip: "10.10.1.12", mac: "00:1A:2B:10:01:02", model: "终端-X1" },
-      { id: "dd-x2-01", name: "调度X2台-01", type: "terminal", zone: "调度管理区", status: "normal", x: 260, y: 100, ip: "10.10.1.21", mac: "00:1A:2B:10:02:01", model: "终端-X2" },
-      { id: "dd-x2-02", name: "调度X2台-02", type: "terminal", zone: "调度管理区", status: "normal", x: 340, y: 100, ip: "10.10.1.22", mac: "00:1A:2B:10:02:02", model: "终端-X2" },
-      { id: "dd-x3-01", name: "调度X3台-01", type: "terminal", zone: "调度管理区", status: "normal", x: 420, y: 100, ip: "10.10.1.31", mac: "00:1A:2B:10:03:01", model: "终端-X3" },
-      { id: "dd-x3-02", name: "调度X3台-02", type: "terminal", zone: "调度管理区", status: "normal", x: 500, y: 100, ip: "10.10.1.32", mac: "00:1A:2B:10:03:02", model: "终端-X3" },
-      { id: "sw-dd-1", name: "调度接入交换机-1", type: "switch", zone: "调度管理区", status: "normal", x: 220, y: 230, ip: "10.10.1.2", mac: "00:1A:2B:AA:01:01", model: "H3C S5130" },
-      { id: "sw-dd-2", name: "调度接入交换机-2", type: "switch", zone: "调度管理区", status: "normal", x: 380, y: 230, ip: "10.10.1.3", mac: "00:1A:2B:AA:01:02", model: "H3C S5130" },
+      // —— 数据机房区：横向串联 ——
+      { id: "cloud-mobile", name: "移动外网", type: "cloud", zone: "数据机房区", status: "normal", x: 120, y: 140, ip: "-", vlan: "", iconType: "cloud", mac: "-", model: "运营商出口" },
+      { id: "cloud-edu", name: "教育专线", type: "cloud", zone: "数据机房区", status: "normal", x: 250, y: 140, ip: "-", vlan: "", iconType: "cloud", mac: "-", model: "教育城域网" },
+      { id: "fw-edge", name: "防火墙", type: "firewall", zone: "数据机房区", status: "normal", x: 400, y: 140, ip: "10.78.0.1", vlan: "", iconType: "firewall", mac: "00:1A:2B:FW:00:01", model: "华为 USG6000" },
+      { id: "acm", name: "全网行为管理", type: "security", zone: "数据机房区", status: "normal", x: 560, y: 140, ip: "10.78.0.252", vlan: "", iconType: "box", mac: "00:1A:2B:AC:00:01", model: "上网行为管理" },
+      { id: "core-hx", name: "三层核心交换", type: "core", zone: "数据机房区", status: "normal", x: 780, y: 150, ip: "10.78.0.254", vlan: "", iconType: "switch", mac: "00:1A:2B:CE:00:01", model: "三层核心交换机" },
+      { id: "srv-av", name: "防病毒服务器", type: "server", zone: "数据机房区", status: "fault", x: 1000, y: 140, ip: "10.78.0.10", vlan: "", iconType: "server", mac: "00:1A:2B:SV:00:10", model: "防病毒平台" },
+      { id: "srv-oa", name: "OA服务器", type: "server", zone: "数据机房区", status: "normal", x: 1140, y: 140, ip: "10.78.0.12", vlan: "", iconType: "server", mac: "00:1A:2B:SV:00:12", model: "校务OA" },
+      { id: "ups-1", name: "UPS", type: "ups", zone: "数据机房区", status: "normal", x: 1280, y: 140, ip: "-", vlan: "机房供电", iconType: "ups", mac: "-", model: "机房UPS" },
 
-      // 维护作业管理区（小）
-      { id: "printer-1", name: "打印机", type: "printer", zone: "维护作业管理区", status: "normal", x: 650, y: 100, ip: "10.10.2.21", mac: "00:1A:2B:20:01:01", model: "HP LaserJet" },
-      { id: "maint-console", name: "维护台", type: "terminal", zone: "维护作业管理区", status: "normal", x: 760, y: 100, ip: "10.10.2.22", mac: "00:1A:2B:20:01:02", model: "维护终端" },
-      { id: "sw-maint", name: "维护接入交换机", type: "switch", zone: "维护作业管理区", status: "normal", x: 705, y: 230, ip: "10.10.2.2", mac: "00:1A:2B:AA:02:01", model: "H3C S5130" },
+      // —— 无线区：AC → 接入 → AP → 终端 ——
+      { id: "ac-1", name: "AC控制器", type: "ac", zone: "无线区", status: "normal", x: 282, y: 420, ip: "10.78.123.254/22", vlan: "", iconType: "ac", mac: "00:1A:2B:AC:01:01", model: "无线控制器" },
+      { id: "sw-wifi-1", name: "接入交换机(无网管)", type: "switch", zone: "无线区", status: "normal", x: 160, y: 560, ip: "10.78.123.11", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:W1:01", model: "无网管接入" },
+      { id: "sw-wifi-2", name: "接入交换机(无网管)", type: "switch", zone: "无线区", status: "normal", x: 404, y: 560, ip: "10.78.123.12", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:W1:02", model: "无网管接入" },
+      { id: "ap-1", name: "AP-行政办", type: "ap", zone: "无线区", status: "normal", x: 100, y: 700, ip: "10.78.124.11", vlan: "802.1X", iconType: "ap", mac: "00:1A:2B:AP:01:01", model: "802.1X 认证" },
+      { id: "ap-2", name: "AP-会议室", type: "ap", zone: "无线区", status: "normal", x: 210, y: 700, ip: "10.78.124.12", vlan: "802.1X", iconType: "ap", mac: "00:1A:2B:AP:01:02", model: "802.1X 认证" },
+      { id: "ap-3", name: "AP-接待厅", type: "ap", zone: "无线区", status: "normal", x: 350, y: 700, ip: "10.78.124.13", vlan: "802.1X", iconType: "ap", mac: "00:1A:2B:AP:01:03", model: "802.1X 认证" },
+      { id: "ap-4", name: "AP-值班室", type: "ap", zone: "无线区", status: "normal", x: 460, y: 700, ip: "10.78.124.14", vlan: "802.1X", iconType: "ap", mac: "00:1A:2B:AP:01:04", model: "802.1X 认证" },
+      { id: "term-pc", name: "行政办公PC", type: "terminal", zone: "无线区", status: "normal", x: 100, y: 860, ip: "10.78.125.21", vlan: "", iconType: "pc", mac: "00:1A:2B:PC:01:01", model: "台式机" },
+      { id: "term-pad", name: "移动平板", type: "terminal", zone: "无线区", status: "normal", x: 210, y: 860, ip: "10.78.125.22", vlan: "", iconType: "smartphone", mac: "00:1A:2B:TB:01:01", model: "平板" },
+      { id: "term-nb", name: "教师笔记本", type: "terminal", zone: "无线区", status: "normal", x: 350, y: 860, ip: "10.78.125.23", vlan: "", iconType: "laptop", mac: "00:1A:2B:NB:01:01", model: "笔记本" },
+      { id: "printer-1", name: "行政打印机", type: "printer", zone: "无线区", status: "normal", x: 460, y: 860, ip: "10.78.125.24", vlan: "", iconType: "printer", mac: "00:1A:2B:PR:01:01", model: "网络打印机" },
 
-      // 维护作业管理区（安全）
-      { id: "sec-bastion", name: "360堡垒机", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 960, y: 95, ip: "10.10.3.11", mac: "00:1A:2B:30:01:01", model: "360堡垒机" },
-      { id: "sec-threat", name: "高级威胁检测", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1040, y: 95, ip: "10.10.3.12", mac: "00:1A:2B:30:01:02", model: "APT" },
-      { id: "sec-log", name: "日志审计", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1120, y: 95, ip: "10.10.3.13", mac: "00:1A:2B:30:01:03", model: "LogAudit" },
-      { id: "sec-dbaudit", name: "数据库审计", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1200, y: 95, ip: "10.10.3.14", mac: "00:1A:2B:30:01:04", model: "DBAudit" },
-      { id: "sec-ids", name: "入侵检测", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1280, y: 95, ip: "10.10.3.15", mac: "00:1A:2B:30:01:05", model: "IDS" },
-      { id: "sec-av", name: "防病毒", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1360, y: 95, ip: "10.10.3.16", mac: "00:1A:2B:30:01:06", model: "AV" },
-      { id: "sec-nac", name: "终端准入", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1440, y: 95, ip: "10.10.3.17", mac: "00:1A:2B:30:01:07", model: "NAC" },
-      { id: "sec-sa", name: "态势感知", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1520, y: 95, ip: "10.10.3.18", mac: "00:1A:2B:30:01:08", model: "SA" },
-      { id: "sec-vuln", name: "漏洞扫描", type: "security", zone: "维护作业管理区(安全)", status: "normal", x: 1600, y: 95, ip: "10.10.3.19", mac: "00:1A:2B:30:01:09", model: "Scanner" },
-      { id: "sw-mgmt", name: "管理接入交换机", type: "switch", zone: "维护作业管理区(安全)", status: "normal", x: 1280, y: 230, ip: "10.10.3.2", mac: "00:1A:2B:AA:03:01", model: "H3C S5560" },
+      // —— 办公区：汇聚 → 接入 → 终端 ——
+      { id: "agg-teach", name: "千兆汇聚交换机", type: "switch", zone: "办公区", status: "normal", x: 826, y: 420, ip: "172.65.200.254/23", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:T0:01", model: "千兆汇聚" },
+      { id: "sw-t1", name: "接入交换机 SW1", type: "switch", zone: "办公区", status: "normal", x: 660, y: 560, ip: "172.65.200.11", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:T1:01", model: "可网管接入" },
+      { id: "sw-t2", name: "接入交换机 SW2", type: "switch", zone: "办公区", status: "normal", x: 826, y: 560, ip: "172.65.200.12", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:T1:02", model: "可网管接入" },
+      { id: "sw-t3", name: "接入交换机 SW3", type: "switch", zone: "办公区", status: "normal", x: 992, y: 560, ip: "172.65.200.13", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:T1:03", model: "可网管接入" },
+      { id: "pc-1", name: "教室1-Vlan101", type: "terminal", zone: "办公区", status: "normal", x: 600, y: 720, ip: "172.65.201.11", vlan: "Vlan101", iconType: "pc", mac: "00:1A:2B:PC:T1:01", model: "多媒体教室" },
+      { id: "pc-2", name: "教室2-Vlan102", type: "terminal", zone: "办公区", status: "normal", x: 700, y: 720, ip: "172.65.201.12", vlan: "Vlan102", iconType: "pc", mac: "00:1A:2B:PC:T1:02", model: "多媒体教室" },
+      { id: "pc-3", name: "教研室-Vlan103", type: "terminal", zone: "办公区", status: "normal", x: 800, y: 720, ip: "172.65.201.13", vlan: "Vlan103", iconType: "pc", mac: "00:1A:2B:PC:T1:03", model: "教研室终端" },
+      { id: "pc-4", name: "教室4-Vlan104", type: "terminal", zone: "办公区", status: "normal", x: 900, y: 720, ip: "172.65.201.14", vlan: "Vlan104", iconType: "pc", mac: "00:1A:2B:PC:T1:04", model: "多媒体教室" },
+      { id: "pc-5", name: "实验室-Vlan105", type: "terminal", zone: "办公区", status: "normal", x: 1000, y: 720, ip: "172.65.201.15", vlan: "Vlan105", iconType: "pc", mac: "00:1A:2B:PC:T1:05", model: "实验室终端" },
+      { id: "pc-6", name: "教室6-Vlan106", type: "terminal", zone: "办公区", status: "normal", x: 760, y: 860, ip: "172.65.201.16", vlan: "Vlan106", iconType: "pc", mac: "00:1A:2B:PC:T1:06", model: "多媒体教室" },
+      { id: "pc-7", name: "阅览室-Vlan107", type: "terminal", zone: "办公区", status: "normal", x: 900, y: 860, ip: "172.65.201.17", vlan: "Vlan107", iconType: "pc", mac: "00:1A:2B:PC:T1:07", model: "阅览室终端" },
 
-      // 防火墙 A 层
-      { id: "fw-a01", name: "防火墙-A01", type: "firewall", zone: "边界防护", status: "normal", x: 220, y: 390, ip: "10.10.10.11", mac: "00:1A:2B:FW:A0:01", model: "华为 USG6000" },
-      { id: "fw-a02", name: "防火墙-A02", type: "firewall", zone: "边界防护", status: "normal", x: 380, y: 390, ip: "10.10.10.12", mac: "00:1A:2B:FW:A0:02", model: "华为 USG6000" },
-      { id: "fw-a03", name: "防火墙-A03", type: "firewall", zone: "边界防护", status: "normal", x: 705, y: 390, ip: "10.10.10.13", mac: "00:1A:2B:FW:A0:03", model: "华为 USG6000" },
-      { id: "fw-a04", name: "防火墙-A04", type: "firewall", zone: "边界防护", status: "normal", x: 1280, y: 390, ip: "10.10.10.14", mac: "00:1A:2B:FW:A0:04", model: "华为 USG6000" },
-
-      // 核心层
-      { id: "core-1", name: "核心交换机-华为", type: "core", zone: "核心层", status: "normal", x: 780, y: 520, ip: "10.10.0.1", mac: "00:1A:2B:CE:00:01", model: "华为 CE16800" },
-      { id: "core-2", name: "核心交换机-华为", type: "core", zone: "核心层", status: "normal", x: 980, y: 520, ip: "10.10.0.2", mac: "00:1A:2B:CE:00:02", model: "华为 CE16800" },
-
-      // 核心业务管理区
-      { id: "srv-cfg-1", name: "服务器-配置应用-1", type: "server", zone: "核心业务管理区", status: "fault", x: 110, y: 690, ip: "10.20.1.11", mac: "00:1A:2B:40:01:01", model: "Dell R740" },
-      { id: "srv-cfg-2", name: "服务器-配置应用-2", type: "server", zone: "核心业务管理区", status: "normal", x: 210, y: 690, ip: "10.20.1.12", mac: "00:1A:2B:40:01:02", model: "Dell R740" },
-      { id: "srv-his-1", name: "历史数据-1", type: "server", zone: "核心业务管理区", status: "normal", x: 310, y: 690, ip: "10.20.1.21", mac: "00:1A:2B:40:02:01", model: "Dell R740" },
-      { id: "srv-his-2", name: "历史数据-2", type: "server", zone: "核心业务管理区", status: "normal", x: 390, y: 690, ip: "10.20.1.22", mac: "00:1A:2B:40:02:02", model: "Dell R740" },
-      { id: "sw-b01a", name: "接入交换机-B01", type: "switch", zone: "核心业务管理区", status: "normal", x: 170, y: 820, ip: "10.20.1.2", mac: "00:1A:2B:AA:B0:01", model: "H3C S5130" },
-      { id: "sw-b01b", name: "接入交换机-B01", type: "switch", zone: "核心业务管理区", status: "normal", x: 310, y: 820, ip: "10.20.1.3", mac: "00:1A:2B:AA:B0:02", model: "H3C S5130" },
-      { id: "disk-01", name: "磁盘阵列-01", type: "storage", zone: "核心业务管理区", status: "normal", x: 170, y: 950, ip: "10.20.1.31", mac: "00:1A:2B:ST:00:01", model: "Huawei OceanStor" },
-      { id: "disk-02", name: "磁盘阵列-02", type: "storage", zone: "核心业务管理区", status: "normal", x: 310, y: 950, ip: "10.20.1.32", mac: "00:1A:2B:ST:00:02", model: "Huawei OceanStor" },
-
-      // 数据采集区服务器
-      { id: "srv-fe-1", name: "前置通信-1", type: "server", zone: "数据采集区", status: "normal", x: 530, y: 690, ip: "10.30.1.11", mac: "00:1A:2B:50:01:01", model: "Dell R640" },
-      { id: "srv-fe-2", name: "前置通信-2", type: "server", zone: "数据采集区", status: "normal", x: 610, y: 690, ip: "10.30.1.12", mac: "00:1A:2B:50:01:02", model: "Dell R640" },
-      { id: "srv-fe-3", name: "前置通信-3", type: "server", zone: "数据采集区", status: "normal", x: 690, y: 690, ip: "10.30.1.13", mac: "00:1A:2B:50:01:03", model: "Dell R640" },
-      { id: "srv-fe-4", name: "前置通信-4", type: "server", zone: "数据采集区", status: "normal", x: 770, y: 690, ip: "10.30.1.14", mac: "00:1A:2B:50:01:04", model: "Dell R640" },
-      { id: "srv-backup", name: "服务器-备份", type: "server", zone: "数据采集区", status: "fault", x: 850, y: 690, ip: "10.30.1.21", mac: "00:1A:2B:50:02:01", model: "Dell R740" },
-      { id: "srv-maint", name: "服务器-维护", type: "server", zone: "数据采集区", status: "normal", x: 930, y: 690, ip: "10.30.1.22", mac: "00:1A:2B:50:02:02", model: "Dell R640" },
-      { id: "srv-fwd", name: "服务器-转发", type: "server", zone: "数据采集区", status: "normal", x: 1010, y: 690, ip: "10.30.1.23", mac: "00:1A:2B:50:02:03", model: "Dell R640" },
-      { id: "srv-av", name: "服务器-防病毒", type: "server", zone: "数据采集区", status: "normal", x: 1090, y: 690, ip: "10.30.1.24", mac: "00:1A:2B:50:02:04", model: "Dell R640" },
-      { id: "srv-if", name: "服务器-接口", type: "server", zone: "数据采集区", status: "normal", x: 1170, y: 690, ip: "10.30.1.25", mac: "00:1A:2B:50:02:05", model: "Dell R640" },
-      { id: "srv-ntp", name: "NTP时钟", type: "server", zone: "数据采集区", status: "normal", x: 1250, y: 690, ip: "10.30.1.26", mac: "00:1A:2B:50:02:06", model: "NTP Server" },
-
-      { id: "sw-dc-1", name: "数据采集交换机-1", type: "switch", zone: "数据采集区", status: "normal", x: 620, y: 820, ip: "10.30.1.2", mac: "00:1A:2B:AA:D0:01", model: "H3C S5130" },
-      { id: "sw-dc-2", name: "数据采集交换机-2", type: "switch", zone: "数据采集区", status: "normal", x: 740, y: 820, ip: "10.30.1.3", mac: "00:1A:2B:AA:D0:02", model: "H3C S5130" },
-      { id: "sw-tx-1", name: "传输采集交换机-1", type: "switch", zone: "数据采集区", status: "normal", x: 900, y: 820, ip: "10.30.1.4", mac: "00:1A:2B:AA:D0:03", model: "H3C S5130" },
-      { id: "sw-tx-2", name: "传输采集交换机-2", type: "switch", zone: "数据采集区", status: "normal", x: 1020, y: 820, ip: "10.30.1.5", mac: "00:1A:2B:AA:D0:04", model: "H3C S5130" },
-
-      // 防火墙 B / 网闸 / 云
-      { id: "fw-b01", name: "防火墙-B01", type: "firewall", zone: "数据采集区", status: "normal", x: 680, y: 960, ip: "10.30.10.11", mac: "00:1A:2B:FW:B0:01", model: "华为 USG6000" },
-      { id: "fw-b02", name: "防火墙-B02", type: "firewall", zone: "数据采集区", status: "normal", x: 960, y: 960, ip: "10.30.10.12", mac: "00:1A:2B:FW:B0:02", model: "华为 USG6000" },
-      { id: "fw-b03", name: "防火墙-B03", type: "firewall", zone: "转发通道", status: "normal", x: 1400, y: 820, ip: "10.30.10.13", mac: "00:1A:2B:FW:B0:03", model: "华为 USG6000" },
-      { id: "fw-b04", name: "防火墙-B04", type: "firewall", zone: "接口通道", status: "normal", x: 1580, y: 820, ip: "10.30.10.14", mac: "00:1A:2B:FW:B0:04", model: "华为 USG6000" },
-      { id: "gk-fwd", name: "网闸-转发", type: "gatekeeper", zone: "转发通道", status: "normal", x: 1400, y: 960, ip: "10.30.20.11", mac: "00:1A:2B:GK:00:01", model: "网闸-FW" },
-      { id: "gk-if", name: "网闸-接口", type: "gatekeeper", zone: "接口通道", status: "normal", x: 1580, y: 960, ip: "10.30.20.12", mac: "00:1A:2B:GK:00:02", model: "网闸-IF" },
-      { id: "cloud-comm", name: "通信数据网", type: "cloud", zone: "外部出口", status: "normal", x: 680, y: 1120, ip: "-", mac: "-", model: "外部网络" },
-      { id: "cloud-tx", name: "传输网", type: "cloud", zone: "外部出口", status: "normal", x: 960, y: 1120, ip: "-", mac: "-", model: "外部网络" },
+      // —— 监控安防区：汇聚 → OLT/视频 → ONU/NVR → 摄像头 ——
+      { id: "agg-sec", name: "安防监控汇聚交换机", type: "switch", zone: "监控安防区", status: "normal", x: 1366, y: 420, ip: "172.65.202.254/23", vlan: "", iconType: "switch", mac: "00:1A:2B:SW:S0:01", model: "安防汇聚" },
+      { id: "olt-1", name: "OLT多业务交换机", type: "olt", zone: "监控安防区", status: "normal", x: 1240, y: 560, ip: "192.168.0.65/24", vlan: "", iconType: "switch", mac: "00:1A:2B:OL:00:01", model: "OLT" },
+      { id: "vms-1", name: "视频管理一体机", type: "server", zone: "监控安防区", status: "normal", x: 1480, y: 560, ip: "172.65.202.10", vlan: "", iconType: "box", mac: "00:1A:2B:VM:00:01", model: "视频平台" },
+      { id: "onu-1", name: "ONU-1", type: "switch", zone: "监控安防区", status: "normal", x: 1180, y: 700, ip: "192.168.0.71", vlan: "", iconType: "switch", mac: "00:1A:2B:ON:00:01", model: "ONU" },
+      { id: "onu-2", name: "ONU-2", type: "switch", zone: "监控安防区", status: "normal", x: 1300, y: 700, ip: "192.168.0.72", vlan: "", iconType: "switch", mac: "00:1A:2B:ON:00:02", model: "ONU" },
+      { id: "nas-1", name: "网络存储服务器", type: "storage", zone: "监控安防区", status: "normal", x: 1540, y: 700, ip: "172.65.202.20", vlan: "", iconType: "cylinder", mac: "00:1A:2B:ST:00:01", model: "监控存储" },
+      { id: "nvr-1", name: "NVR1", type: "nvr", zone: "监控安防区", status: "normal", x: 1400, y: 700, ip: "172.65.202.31", vlan: "", iconType: "cylinder", mac: "00:1A:2B:NV:00:01", model: "NVR" },
+      { id: "nvr-2", name: "NVR2", type: "nvr", zone: "监控安防区", status: "fault", x: 1480, y: 700, ip: "172.65.202.32", vlan: "", iconType: "cylinder", mac: "00:1A:2B:NV:00:02", model: "NVR" },
+      { id: "nvr-3", name: "NVR3", type: "nvr", zone: "监控安防区", status: "normal", x: 1480, y: 820, ip: "172.65.202.33", vlan: "", iconType: "cylinder", mac: "00:1A:2B:NV:00:03", model: "NVR" },
+      { id: "wall-1", name: "监控电视墙", type: "terminal", zone: "监控安防区", status: "normal", x: 1180, y: 860, ip: "172.65.202.40", vlan: "监控中心", iconType: "pc", mac: "00:1A:2B:VW:00:01", model: "电视墙" },
+      { id: "cam-1", name: "走廊摄像头", type: "camera", zone: "监控安防区", status: "normal", x: 1300, y: 860, ip: "172.65.203.11", vlan: "", iconType: "camera", mac: "00:1A:2B:CM:00:01", model: "IPC" },
+      { id: "cam-2", name: "教室摄像头", type: "camera", zone: "监控安防区", status: "normal", x: 1420, y: 860, ip: "172.65.203.12", vlan: "", iconType: "camera", mac: "00:1A:2B:CM:00:02", model: "IPC" },
+      { id: "cam-3", name: "楼道摄像头", type: "camera", zone: "监控安防区", status: "normal", x: 1540, y: 860, ip: "172.65.203.13", vlan: "", iconType: "camera", mac: "00:1A:2B:CM:00:03", model: "IPC" },
     ];
 
     const links = [
-      // 调度终端 → 接入交换机（双上联）
-      { source: "dd-x1-01", target: "sw-dd-1", status: "normal" },
-      { source: "dd-x1-02", target: "sw-dd-1", status: "normal" },
-      { source: "dd-x2-01", target: "sw-dd-1", status: "normal" },
-      { source: "dd-x2-02", target: "sw-dd-2", status: "normal" },
-      { source: "dd-x3-01", target: "sw-dd-2", status: "normal" },
-      { source: "dd-x3-02", target: "sw-dd-2", status: "normal" },
-      { source: "dd-x1-01", target: "sw-dd-2", status: "normal" },
-      { source: "dd-x3-02", target: "sw-dd-1", status: "normal" },
-      { source: "sw-dd-1", target: "fw-a01", status: "normal" },
-      { source: "sw-dd-2", target: "fw-a02", status: "normal" },
-      { source: "sw-dd-1", target: "fw-a02", status: "normal" },
-      { source: "sw-dd-2", target: "fw-a01", status: "normal" },
+      // 数据机房横向主干
+      { source: "cloud-mobile", target: "fw-edge", status: "normal", level: "trunk", linkType: "copper" },
+      { source: "cloud-edu", target: "fw-edge", status: "normal", level: "trunk", linkType: "copper" },
+      { source: "fw-edge", target: "acm", status: "normal", level: "trunk", linkType: "copper" },
+      { source: "acm", target: "core-hx", status: "normal", level: "trunk", linkType: "copper" },
+      { source: "core-hx", target: "srv-av", status: "normal", level: "trunk", linkType: "copper" },
+      { source: "core-hx", target: "srv-oa", status: "normal", level: "trunk", linkType: "copper" },
+      { source: "core-hx", target: "ups-1", status: "normal", level: "access", linkType: "copper" },
 
-      // 维护区
-      { source: "printer-1", target: "sw-maint", status: "normal" },
-      { source: "maint-console", target: "sw-maint", status: "normal" },
-      { source: "sw-maint", target: "fw-a03", status: "normal" },
+      // 核心下联三列主干（光缆）
+      { source: "core-hx", target: "ac-1", status: "normal", level: "trunk", linkType: "fiber", label: "光缆" },
+      { source: "core-hx", target: "agg-teach", status: "normal", level: "trunk", linkType: "fiber", label: "光缆" },
+      { source: "core-hx", target: "agg-sec", status: "normal", level: "trunk", linkType: "fiber", label: "光缆" },
 
-      // 安全管理区
-      { source: "sec-bastion", target: "sw-mgmt", status: "normal" },
-      { source: "sec-threat", target: "sw-mgmt", status: "normal" },
-      { source: "sec-log", target: "sw-mgmt", status: "normal" },
-      { source: "sec-dbaudit", target: "sw-mgmt", status: "normal" },
-      { source: "sec-ids", target: "sw-mgmt", status: "normal" },
-      { source: "sec-av", target: "sw-mgmt", status: "normal" },
-      { source: "sec-nac", target: "sw-mgmt", status: "normal" },
-      { source: "sec-sa", target: "sw-mgmt", status: "normal" },
-      { source: "sec-vuln", target: "sw-mgmt", status: "normal" },
-      { source: "sw-mgmt", target: "fw-a04", status: "normal" },
+      // 无线区
+      { source: "ac-1", target: "sw-wifi-1", status: "normal", level: "access", linkType: "fiber", label: "光缆" },
+      { source: "ac-1", target: "sw-wifi-2", status: "normal", level: "access", linkType: "copper", label: "超五类" },
+      { source: "sw-wifi-1", target: "ap-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-wifi-1", target: "ap-2", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-wifi-2", target: "ap-3", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-wifi-2", target: "ap-4", status: "normal", level: "access", linkType: "copper" },
+      { source: "ap-1", target: "term-pc", status: "normal", level: "access", linkType: "copper" },
+      { source: "ap-2", target: "term-pad", status: "normal", level: "access", linkType: "copper" },
+      { source: "ap-3", target: "term-nb", status: "normal", level: "access", linkType: "copper" },
+      { source: "ap-4", target: "printer-1", status: "normal", level: "access", linkType: "copper" },
 
-      // A 防火墙 → 核心
-      { source: "fw-a01", target: "core-1", status: "normal" },
-      { source: "fw-a01", target: "core-2", status: "normal" },
-      { source: "fw-a02", target: "core-1", status: "normal" },
-      { source: "fw-a02", target: "core-2", status: "normal" },
-      { source: "fw-a03", target: "core-1", status: "normal" },
-      { source: "fw-a03", target: "core-2", status: "normal" },
-      { source: "fw-a04", target: "core-1", status: "normal" },
-      { source: "fw-a04", target: "core-2", status: "normal" },
-      { source: "core-1", target: "core-2", status: "normal" },
+      // 办公区
+      { source: "agg-teach", target: "sw-t1", status: "normal", level: "access", linkType: "copper" },
+      { source: "agg-teach", target: "sw-t2", status: "normal", level: "access", linkType: "copper" },
+      { source: "agg-teach", target: "sw-t3", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t1", target: "pc-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t1", target: "pc-2", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t1", target: "pc-3", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t2", target: "pc-4", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t2", target: "pc-5", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t3", target: "pc-6", status: "normal", level: "access", linkType: "copper" },
+      { source: "sw-t3", target: "pc-7", status: "normal", level: "access", linkType: "copper" },
 
-      // 核心业务
-      { source: "srv-cfg-1", target: "sw-b01a", status: "fault" },
-      { source: "srv-cfg-2", target: "sw-b01a", status: "normal" },
-      { source: "srv-his-1", target: "sw-b01b", status: "normal" },
-      { source: "srv-his-2", target: "sw-b01b", status: "normal" },
-      { source: "sw-b01a", target: "disk-01", status: "normal" },
-      { source: "sw-b01b", target: "disk-02", status: "normal" },
-      { source: "sw-b01a", target: "core-1", status: "normal" },
-      { source: "sw-b01b", target: "core-2", status: "normal" },
-
-      // 数据采集区
-      { source: "srv-fe-1", target: "sw-dc-1", status: "normal" },
-      { source: "srv-fe-2", target: "sw-dc-1", status: "normal" },
-      { source: "srv-fe-3", target: "sw-dc-2", status: "normal" },
-      { source: "srv-fe-4", target: "sw-dc-2", status: "normal" },
-      { source: "srv-backup", target: "sw-tx-1", status: "fault" },
-      { source: "srv-maint", target: "sw-tx-1", status: "normal" },
-      { source: "srv-fwd", target: "sw-tx-2", status: "normal" },
-      { source: "srv-av", target: "sw-tx-2", status: "normal" },
-      { source: "srv-if", target: "sw-tx-2", status: "normal" },
-      { source: "srv-ntp", target: "sw-tx-2", status: "normal" },
-      { source: "sw-dc-1", target: "fw-b01", status: "normal" },
-      { source: "sw-dc-2", target: "fw-b01", status: "normal" },
-      { source: "sw-tx-1", target: "fw-b02", status: "normal" },
-      { source: "sw-tx-2", target: "fw-b02", status: "normal" },
-      { source: "fw-b01", target: "core-1", status: "normal" },
-      { source: "fw-b02", target: "core-2", status: "normal" },
-      { source: "fw-b01", target: "cloud-comm", status: "normal" },
-      { source: "fw-b02", target: "cloud-tx", status: "normal" },
-
-      // 转发 / 接口通道
-      { source: "srv-fwd", target: "fw-b03", status: "normal" },
-      { source: "fw-b03", target: "gk-fwd", status: "normal" },
-      { source: "fw-b03", target: "core-1", status: "normal" },
-      { source: "srv-if", target: "fw-b04", status: "normal" },
-      { source: "fw-b04", target: "gk-if", status: "normal" },
-      { source: "fw-b04", target: "core-2", status: "normal" },
+      // 监控安防区
+      { source: "agg-sec", target: "olt-1", status: "normal", level: "access", linkType: "fiber", label: "光缆" },
+      { source: "agg-sec", target: "vms-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "olt-1", target: "onu-1", status: "normal", level: "access", linkType: "fiber", label: "光缆" },
+      { source: "olt-1", target: "onu-2", status: "normal", level: "access", linkType: "fiber", label: "光缆" },
+      { source: "vms-1", target: "nas-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "vms-1", target: "nvr-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "vms-1", target: "nvr-2", status: "fault", level: "access", linkType: "copper" },
+      { source: "vms-1", target: "nvr-3", status: "normal", level: "access", linkType: "copper" },
+      { source: "onu-1", target: "wall-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "onu-2", target: "cam-1", status: "normal", level: "access", linkType: "copper" },
+      { source: "nvr-1", target: "cam-2", status: "normal", level: "access", linkType: "copper" },
+      { source: "nvr-2", target: "cam-3", status: "fault", level: "access", linkType: "copper" },
     ];
 
     const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
@@ -610,8 +626,8 @@
       scale: 1,
       tx: 0,
       ty: 0,
-      selectedNodeId: "fw-a03",
-      selectedLinkIndex: links.findIndex((l) => l.source === "sw-maint" && l.target === "fw-a03"),
+      selectedNodeId: "core-hx",
+      selectedLinkIndex: links.findIndex((l) => l.source === "acm" && l.target === "core-hx"),
       searchHits: new Set(),
       filters: { type: "", zone: "", status: "" },
       panning: false,
@@ -682,13 +698,9 @@
       if (index === state.selectedLinkIndex) return "selected";
       if (state.selectedNodeId && (link.source === state.selectedNodeId || link.target === state.selectedNodeId)) return "selected";
       if (link.status === "fault") return "fault";
-      const a = nodeMap[link.source];
-      const b = nodeMap[link.target];
-      const types = [a?.type, b?.type];
-      if (types.includes("core") || (types.includes("firewall") && types.includes("core"))) return "core";
-      if (types.includes("firewall") && types.includes("firewall")) return "core";
-      if (a?.type === "core" || b?.type === "core") return "core";
-      if ((a?.type === "firewall" && b?.type === "core") || (b?.type === "firewall" && a?.type === "core")) return "core";
+      if (link.linkType === "fiber") return "fiber";
+      if (link.linkType === "copper" && link.label) return "copper";
+      if (link.level === "trunk") return "trunk";
       return "access";
     }
 
@@ -718,12 +730,20 @@
         const b = nodeMap[link.target];
         if (!a || !b) return;
         const cls = linkVisualStatus(link, index);
-        const color = cls === "fault" ? "#ef4444" : cls === "selected" ? "#f59e0b" : cls === "core" ? "#1e6fff" : "#34d399";
+        const color = cls === "fault" || cls === "fiber" || cls === "copper"
+          ? "#dc2626"
+          : cls === "selected" ? "#f59e0b"
+            : cls === "trunk" ? "#1f3a5f" : "#3b82f6";
         const d = orthoPath(a.x, a.y, b.x, b.y, 4);
         parts.push(`<path class="link-hit" data-link-index="${index}" d="${d}"></path>`);
         parts.push(`<path class="link-line ${cls}" data-link-line="${index}" d="${d}"></path>`);
-        parts.push(`<circle cx="${a.x}" cy="${a.y}" r="3" fill="${color}" opacity=".95"></circle>`);
-        parts.push(`<circle cx="${b.x}" cy="${b.y}" r="3" fill="${color}" opacity=".95"></circle>`);
+        if (link.label && (link.linkType === "fiber" || link.linkType === "copper")) {
+          const mx = (a.x + b.x) / 2 + 8;
+          const my = (a.y + b.y) / 2 - 6;
+          parts.push(`<text class="link-label" x="${mx}" y="${my}">${link.label}</text>`);
+        }
+        parts.push(`<circle cx="${a.x}" cy="${a.y}" r="2.5" fill="${color}" opacity=".9"></circle>`);
+        parts.push(`<circle cx="${b.x}" cy="${b.y}" r="2.5" fill="${color}" opacity=".9"></circle>`);
       });
       els.linksSvg.innerHTML = parts.join("");
       els.linksSvg.querySelectorAll(".link-hit").forEach((el) => {
@@ -740,18 +760,20 @@
         const fault = node.status === "fault";
         const hit = state.searchHits.has(node.id);
         const dim = state.searchHits.size > 0 && !hit && !selected;
-        const icon = resolveIcon(node);
         const alert = getNodeAlert(node);
-        const badgeCls = alert?.level === "critical" ? "" : alert?.level === "minor" ? "is-minor" : "is-major";
-        const tip = alert ? `${node.name}｜告警 ${alert.count}｜${alert.summary}` : node.name;
+        const tip = alert ? `${node.name}｜告警 ${alert.count}｜${alert.summary}` : `${node.name}｜${nodeSubLabel(node)}`;
+        const sub = nodeSubLabel(node);
         return `
           <div class="topo-node ${fault || alert ? "fault" : ""} ${selected ? "selected" : ""} ${hit ? "search-hit" : ""} ${dim ? "dim" : ""}"
                data-node-id="${node.id}" style="left:${node.x}px;top:${node.y}px" title="${tip}">
             <div class="icon-wrap">
-              ${iconSvg(icon)}
-              ${alert ? `<span class="fault-badge ${badgeCls}" aria-label="告警${alert.count}">${alert.count}</span>` : (fault ? '<span class="fault-dot" aria-hidden="true"></span>' : "")}
+              ${deviceIconSvg(resolveIconType(node), !!(fault || alert), node.id)}
+              ${alert ? `<span class="fault-badge" aria-label="告警${alert.count}">${alert.count}</span>` : ""}
             </div>
-            <div class="label" title="${node.name}">${node.name}</div>
+            <div class="label-wrap">
+              <span class="label-name" title="${node.name}">${node.name}</span>
+              <span class="label-sub" title="${sub}">${sub}</span>
+            </div>
           </div>
         `;
       }).join("");
@@ -1119,7 +1141,7 @@
           <div class="form-grid-2">
             <label class="form-field form-item"><span class="form-label form-required">设备名称</span><input class="form-control" id="topoDevName" placeholder="请输入设备名称"></label>
             <label class="form-field form-item"><span class="form-label form-required">设备类型</span><select class="form-control" id="topoDevType">${typeOptionsHtml("server")}</select></label>
-            <label class="form-field form-item"><span class="form-label form-required">所属区域</span><select class="form-control" id="topoDevZone">${zoneOptionsHtml("数据采集区")}</select></label>
+            <label class="form-field form-item"><span class="form-label form-required">所属区域</span><select class="form-control" id="topoDevZone">${zoneOptionsHtml("办公区")}</select></label>
             <label class="form-field form-item"><span class="form-label">状态</span><select class="form-control" id="topoDevStatus"><option value="normal">正常</option><option value="fault">故障</option></select></label>
             <label class="form-field form-item"><span class="form-label">IP</span><input class="form-control" id="topoDevIp" placeholder="如 10.10.1.100"></label>
             <label class="form-field form-item"><span class="form-label">MAC</span><input class="form-control" id="topoDevMac" placeholder="如 00:1A:2B:00:00:01"></label>
@@ -1415,7 +1437,7 @@
     const discoverResult = document.getElementById("discoverResult");
     const protoSteps = [
       { key: "icmp", label: "ICMP", detail: "已探测存活主机与网关", count: () => nodes.filter((n) => ["terminal", "server", "cloud"].includes(n.type)).length },
-      { key: "snmp", label: "SNMP", detail: "已采集交换机/防火墙/安全设备", count: () => nodes.filter((n) => ["switch", "core", "firewall", "security", "storage", "gatekeeper"].includes(n.type)).length },
+      { key: "snmp", label: "SNMP", detail: "已采集交换机/防火墙/安全设备", count: () => nodes.filter((n) => ["switch", "core", "firewall", "security", "storage", "ac", "olt", "nvr"].includes(n.type)).length },
       { key: "hsrp", label: "HSRP", detail: "已识别核心双机与冗余上联", count: () => links.filter((l) => {
         const a = nodeMap[l.source]; const b = nodeMap[l.target];
         return a?.type === "core" || b?.type === "core";
@@ -1475,8 +1497,8 @@
           progress = Math.round(((index + 1) / protoSteps.length) * 100);
           discoverBar.style.width = `${progress}%`;
           if (index === protoSteps.length - 1) {
-            const l2 = nodes.filter((n) => ["switch", "core", "terminal", "printer"].includes(n.type)).length;
-            const l3 = nodes.filter((n) => ["firewall", "server", "security", "gatekeeper", "cloud"].includes(n.type)).length;
+            const l2 = nodes.filter((n) => ["switch", "core", "terminal", "printer", "ap", "camera", "ac", "olt"].includes(n.type)).length;
+            const l3 = nodes.filter((n) => ["firewall", "server", "security", "cloud", "storage", "nvr", "ups"].includes(n.type)).length;
             discoverResult.innerHTML = `
               <strong>发现完成</strong><br>
               协议：ICMP / SNMP / HSRP / STP<br>
@@ -1601,7 +1623,7 @@
     renderLinks();
     renderNodes();
     syncFilterBtn();
-    selectNode("fw-a03", { openPanel: false });
+    selectNode("core-hx", { openPanel: false });
     const bootFit = () => fitView();
     requestAnimationFrame(() => requestAnimationFrame(bootFit));
     window.addEventListener("load", () => setTimeout(bootFit, 80));
