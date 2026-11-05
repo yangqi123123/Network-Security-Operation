@@ -2873,11 +2873,10 @@ html[data-theme="dark"] .nav > .nav-block.open > .nav-item:hover {
 .fault-alarm-topo-canvas {
   position: relative;
   overflow: auto;
-  min-height: 400px;
+  min-height: 440px;
   border-radius: 10px;
   border: 1px solid #e8eef6;
-  background:
-    linear-gradient(180deg, #f8fbff 0%, #f3f7fc 100%);
+  background: #ffffff;
 }
 
 .fault-topo-layer-label {
@@ -2932,79 +2931,85 @@ html[data-theme="dark"] .nav > .nav-block.open > .nav-item:hover {
   align-items: center;
   gap: 6px;
   z-index: 2;
+  transform: translateX(-50%);
 }
 
 .fault-topo-node .icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
-  border: 2px solid #cbd5e1;
-  color: #475569;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  background: transparent;
+  border: none;
+  color: #fff;
+  box-shadow: none;
   position: relative;
   flex-shrink: 0;
 }
 
+.fault-topo-node .icon svg {
+  width: 40px;
+  height: 40px;
+  display: block;
+}
+
 .fault-topo-node .badge {
   position: absolute;
-  top: -6px;
-  right: 22px;
+  top: -7px;
+  right: 28px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: #F53F57;
+  background: #dc2626;
   color: #fff;
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
   text-align: center;
   z-index: 3;
+  box-shadow: 0 0 0 2px #fff;
 }
 
-.fault-topo-node .name {
-  font-size: 12px;
-  line-height: 1.3;
-  color: #334155;
+.fault-topo-node .label-wrap {
   width: 100%;
   max-width: 108px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-align: center;
+  line-height: 1.25;
   padding: 0 2px;
   box-sizing: border-box;
 }
 
-.fault-topo-node.is-critical .icon {
-  border-color: #F53F57;
-  color: #F53F57;
-  box-shadow: 0 0 0 3px rgba(245, 63, 87, 0.12);
+.fault-topo-node .name {
+  display: block;
+  font-size: 12px;
+  color: #1f2937;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.fault-topo-node.is-major .icon {
-  border-color: #F7BA1E;
-  color: #d97706;
-  box-shadow: 0 0 0 3px rgba(247, 186, 30, 0.16);
+.fault-topo-node .sub {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.fault-topo-node.is-info .icon {
-  border-color: #5B83FF;
-  color: #5B83FF;
-}
-
-.fault-topo-node.is-ok .icon {
-  border-color: #22c55e;
-  color: #16a34a;
-}
+.fault-topo-node.is-critical .name { color: #dc2626; font-weight: 600; }
+.fault-topo-node.is-major .name { color: #c2410c; font-weight: 600; }
 
 .fault-topo-node.is-empty {
-  opacity: 0.55;
   pointer-events: none;
+}
+
+.fault-topo-node.is-empty .label-wrap {
+  opacity: 0.65;
 }
 
 .fault-topo-node:hover .icon {
@@ -3036,31 +3041,21 @@ html[data-theme="dark"] .nav > .nav-block.open > .nav-item:hover {
 }
 
 [data-theme="dark"] .fault-topo-node .icon {
-  background: #0E1C3B;
-  border-color: #243054;
-  color: #B8C4DC;
+  background: transparent;
+  border: none;
   box-shadow: none;
 }
 
 [data-theme="dark"] .fault-topo-node .name {
-  color: #B8C4DC;
+  color: #E8EEF8;
 }
 
-[data-theme="dark"] .fault-topo-node.is-critical .icon {
-  border-color: #F53F57;
-  color: #F53F57;
-  box-shadow: 0 0 0 3px rgba(245, 63, 87, 0.18);
+[data-theme="dark"] .fault-topo-node .sub {
+  color: #8490B4;
 }
 
-[data-theme="dark"] .fault-topo-node.is-major .icon {
-  border-color: #F7BA1E;
-  color: #F7BA1E;
-  box-shadow: 0 0 0 3px rgba(247, 186, 30, 0.18);
-}
-
-[data-theme="dark"] .fault-topo-node.is-ok .icon {
-  border-color: #22c55e;
-  color: #22c55e;
+[data-theme="dark"] .fault-alarm-topo-canvas {
+  background: #0A142F;
 }
 
 [data-theme="dark"] .fault-card,

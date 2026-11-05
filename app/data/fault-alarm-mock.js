@@ -658,25 +658,63 @@
     };
   }
 
-  // 与故障显示/拓扑打通：补齐区域、分层、探针、设备 id（不改变原有告警通知字段）
-  const DOMAIN_META = {
-    核心机房: { region: "行政楼", layer: "核心层", probe: "行政楼核心探针-01" },
-    数据中心: { region: "第一教学楼", layer: "汇聚层", probe: "第一教学楼汇聚探针-02" },
-    核心网络: { region: "行政楼", layer: "核心层", probe: "行政楼核心探针-01" },
-    DMZ: { region: "第一教学楼", layer: "接入层", probe: "第一教学楼接入探针-05" },
-    办公区: { region: "第2教学楼", layer: "接入层", probe: "第2教学楼接入探针-07" },
-    边界网络: { region: "第2教学楼", layer: "汇聚层", probe: "第2教学楼汇聚探针-03" },
+  // 与网络拓扑页打通：区域/设备/探针对齐 topology.html 校区机房拓扑
+  const TOPO_DEVICES = {
+    "core-hx": { name: "三层核心交换", region: "数据机房区", layer: "核心层", probe: "数据机房核心探针-01", ip: "10.78.0.254", iconType: "switch" },
+    "fw-edge": { name: "防火墙", region: "数据机房区", layer: "核心层", probe: "数据机房核心探针-01", ip: "10.78.0.1", iconType: "firewall" },
+    "acm": { name: "全网行为管理", region: "数据机房区", layer: "汇聚层", probe: "数据机房核心探针-01", ip: "10.78.0.252", iconType: "box" },
+    "srv-av": { name: "防病毒服务器", region: "数据机房区", layer: "接入层", probe: "数据机房核心探针-01", ip: "10.78.0.10", iconType: "server" },
+    "srv-oa": { name: "OA服务器", region: "数据机房区", layer: "接入层", probe: "数据机房核心探针-01", ip: "10.78.0.12", iconType: "server" },
+    "ac-1": { name: "AC控制器", region: "行政楼", layer: "核心层", probe: "行政楼汇聚探针-02", ip: "10.78.123.254/22", iconType: "ac" },
+    "sw-wifi-1": { name: "接入交换机(无网管)", region: "行政楼", layer: "汇聚层", probe: "行政楼汇聚探针-02", ip: "10.78.123.11", iconType: "switch" },
+    "ap-1": { name: "AP-行政办", region: "行政楼", layer: "接入层", probe: "行政楼接入探针-05", ip: "10.78.124.11", iconType: "ap" },
+    "ap-2": { name: "AP-会议室", region: "行政楼", layer: "接入层", probe: "行政楼接入探针-05", ip: "10.78.124.12", iconType: "ap" },
+    "agg-teach": { name: "千兆汇聚交换机", region: "第一教学楼", layer: "核心层", probe: "第一教学楼汇聚探针-03", ip: "172.65.200.254/23", iconType: "switch" },
+    "sw-t1": { name: "接入交换机 SW1", region: "第一教学楼", layer: "汇聚层", probe: "第一教学楼汇聚探针-03", ip: "172.65.200.11", iconType: "switch" },
+    "sw-t2": { name: "接入交换机 SW2", region: "第一教学楼", layer: "汇聚层", probe: "第一教学楼汇聚探针-03", ip: "172.65.200.12", iconType: "switch" },
+    "pc-1": { name: "教室1-Vlan101", region: "第一教学楼", layer: "接入层", probe: "第一教学楼接入探针-07", ip: "172.65.201.11", iconType: "pc" },
+    "pc-3": { name: "教研室-Vlan103", region: "第一教学楼", layer: "接入层", probe: "第一教学楼接入探针-07", ip: "172.65.201.13", iconType: "pc" },
+    "agg-sec": { name: "安防监控汇聚交换机", region: "第二教学楼", layer: "核心层", probe: "第二教学楼汇聚探针-04", ip: "172.65.202.254/23", iconType: "switch" },
+    "olt-1": { name: "OLT多业务交换机", region: "第二教学楼", layer: "汇聚层", probe: "第二教学楼汇聚探针-04", ip: "192.168.0.65/24", iconType: "switch" },
+    "vms-1": { name: "视频管理一体机", region: "第二教学楼", layer: "汇聚层", probe: "第二教学楼汇聚探针-04", ip: "172.65.202.10", iconType: "box" },
+    "nvr-2": { name: "NVR2", region: "第二教学楼", layer: "接入层", probe: "第二教学楼接入探针-08", ip: "172.65.202.32", iconType: "cylinder" },
+    "cam-1": { name: "走廊摄像头", region: "第二教学楼", layer: "接入层", probe: "第二教学楼接入探针-08", ip: "172.65.203.11", iconType: "camera" },
   };
 
-  alarms.forEach((item) => {
-    const meta = DOMAIN_META[item.domain] || { region: "行政楼", layer: "核心层", probe: "行政楼核心探针-01" };
-    if (!item.region) item.region = meta.region;
-    if (!item.layer) item.layer = meta.layer;
-    if (!item.probe) item.probe = meta.probe;
-    if (!item.deviceId) item.deviceId = item.deviceCode || `DEV-${item.id}`;
-    if (!item.ip) {
-      item.ip = `10.${(item.id % 20) + 1}.${(item.id % 8) + 1}.${10 + item.id}`;
-    }
+  const DOMAIN_POOL = {
+    核心机房: ["core-hx", "fw-edge", "srv-av", "srv-oa"],
+    数据中心: ["agg-teach", "sw-t1", "sw-t2", "pc-1"],
+    核心网络: ["core-hx", "acm", "fw-edge"],
+    DMZ: ["ac-1", "sw-wifi-1", "ap-1", "ap-2"],
+    办公区: ["pc-1", "pc-3", "sw-t1", "agg-teach"],
+    边界网络: ["agg-sec", "olt-1", "vms-1", "nvr-2", "cam-1"],
+  };
+
+  const MESSAGE_OVERRIDE = {
+    "srv-av": "防病毒特征库更新超时，部分终端防护策略未同步",
+    "nvr-2": "NVR2 磁盘异常，监控回放中断",
+    "core-hx": "三层核心交换 SNMP 采集抖动，端口利用率升高",
+    "fw-edge": "防火墙会话数超阈，教育专线上联拥塞",
+    "ac-1": "AC 控制器关联 AP 数异常，无线认证延迟升高",
+    "ap-1": "AP-行政办 离线，802.1X 认证中断",
+    "agg-teach": "千兆汇聚交换机上联光模块光衰超阈",
+    "pc-1": "教室1-Vlan101 终端流量异常，疑似环路",
+    "cam-1": "走廊摄像头码流中断，ONU 上联闪断",
+  };
+
+  alarms.forEach((item, index) => {
+    const pool = DOMAIN_POOL[item.domain] || ["core-hx"];
+    const topoId = pool[index % pool.length];
+    const dev = TOPO_DEVICES[topoId] || TOPO_DEVICES["core-hx"];
+    item.region = dev.region;
+    item.layer = dev.layer;
+    item.probe = dev.probe;
+    item.device = dev.name;
+    item.deviceId = topoId;
+    item.deviceCode = topoId.toUpperCase();
+    item.ip = dev.ip;
+    item.iconType = dev.iconType;
+    if (MESSAGE_OVERRIDE[topoId]) item.message = MESSAGE_OVERRIDE[topoId];
   });
 
   function faultLevelKey(level) {

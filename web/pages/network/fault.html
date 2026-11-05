@@ -44,7 +44,7 @@
             </label>
             <label class="form-field">
               <span class="form-label">监控探针</span>
-              <input class="form-control" id="filterProbe" placeholder="如：行政楼核心探针">
+              <input class="form-control" id="filterProbe" placeholder="如：数据机房核心探针">
             </label>
             <div class="fault-filter-actions">
               <button class="btn btn-secondary" type="button" id="btnFilterReset">重置</button>
@@ -57,7 +57,6 @@
         <section class="fault-card">
           <div class="fault-card-head">
             <h3>网络告警拓扑图</h3>
-            <span class="fault-platform-hint">跨楼宇探针分层监控 · 节点告警数醒目展示 · 点击节点进入设备详情</span>
           </div>
           <div class="fault-alarm-topo" id="alarmTopo">
             <div class="fault-alarm-topo-legend">
@@ -196,16 +195,66 @@
         `).join("") || '<tr><td colspan="9">暂无告警</td></tr>';
       }
 
+      function deviceIconSvg(iconType, fault, uid) {
+        const top = fault ? "#ef4444" : "#3b82c4";
+        const mid = fault ? "#dc2626" : "#1f5fa8";
+        const bot = fault ? "#b91c1c" : "#164a86";
+        const gid = `fg-${uid}`.replace(/[^a-zA-Z0-9_-]/g, "");
+        const body = (() => {
+          switch (iconType) {
+            case "cloud":
+              return `<path d="M28 28H12.5a7 7 0 1 1 6.3-9.2A6 6 0 1 1 28 28Z" fill="url(#${gid})" stroke="#fff" stroke-width="1.2"/>`;
+            case "firewall":
+              return `<rect x="6" y="8" width="28" height="24" rx="4" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M12 20h6M22 20h6M18 14v12M22 14v12" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><path d="M4 20h4M32 20h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>`;
+            case "ac":
+              return `<circle cx="20" cy="20" r="14" fill="url(#${gid})" stroke="#fff" stroke-width="1.2"/><circle cx="20" cy="20" r="4" fill="#fff"/><path d="M12 20h16M20 12v16" stroke="#fff" stroke-width="1.2" opacity=".7"/>`;
+            case "ap":
+              return `<circle cx="20" cy="22" r="11" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M14 18a8 8 0 0 1 12 0M16.5 20.5a4.5 4.5 0 0 1 7 0" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/><circle cx="20" cy="24" r="1.6" fill="#fff"/>`;
+            case "server":
+              return `<rect x="9" y="6" width="22" height="28" rx="3" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="12" y="10" width="16" height="5" rx="1" fill="#fff" opacity=".9"/><rect x="12" y="18" width="16" height="5" rx="1" fill="#fff" opacity=".75"/><rect x="12" y="26" width="16" height="5" rx="1" fill="#fff" opacity=".6"/>`;
+            case "cylinder":
+              return `<ellipse cx="20" cy="10" rx="11" ry="4" fill="url(#${gid})" stroke="#fff" stroke-width="1"/><path d="M9 10v16c0 2.2 4.9 4 11 4s11-1.8 11-4V10" fill="url(#${gid})" stroke="#fff" stroke-width="1"/><ellipse cx="20" cy="26" rx="11" ry="4" fill="${bot}" stroke="#fff" stroke-width="1" opacity=".9"/>`;
+            case "camera":
+              return `<rect x="5" y="12" width="18" height="14" rx="3" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><path d="M23 15l9-4v14l-9-4z" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><circle cx="14" cy="19" r="3" fill="#fff"/>`;
+            case "pc":
+              return `<rect x="7" y="7" width="26" height="18" rx="2" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><rect x="10" y="10" width="20" height="12" rx="1" fill="#0b3a6b" opacity=".35"/><path d="M16 28h8M14 32h12" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>`;
+            case "switch":
+            case "box":
+            default:
+              return `<rect x="5" y="9" width="30" height="22" rx="4" fill="url(#${gid})" stroke="#fff" stroke-width="1.1"/><circle cx="11" cy="15" r="1.5" fill="#86efac"/><circle cx="16" cy="15" r="1.5" fill="#86efac"/><circle cx="21" cy="15" r="1.5" fill="#fbbf24"/><path d="M10 24h20M10 20h12" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>`;
+          }
+        })();
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+          <defs><linearGradient id="${gid}" x1="20" y1="4" x2="20" y2="36" gradientUnits="userSpaceOnUse">
+            <stop stop-color="${top}"/><stop offset=".55" stop-color="${mid}"/><stop offset="1" stop-color="${bot}"/>
+          </linearGradient></defs>${body}</svg>`;
+      }
+
+      function inferIconType(node) {
+        if (node.iconType) return node.iconType;
+        if (node.sample?.iconType) return node.sample.iconType;
+        const name = String(node.name || "");
+        if (/防火墙/.test(name)) return "firewall";
+        if (/AC|无线控制器/.test(name)) return "ac";
+        if (/^AP|AP-/.test(name)) return "ap";
+        if (/NVR|存储/.test(name)) return "cylinder";
+        if (/摄像/.test(name)) return "camera";
+        if (/服务器|一体机|行为管理/.test(name)) return /一体机|行为管理/.test(name) ? "box" : "server";
+        if (/教室|教研|PC|终端|电视墙/.test(name)) return "pc";
+        return "switch";
+      }
+
       function buildTopoModel(list) {
         const layers = ["核心层", "汇聚层", "接入层"];
-        const regions = Array.from(new Set(list.map((a) => a.region).filter(Boolean)));
-        const useRegions = regions.length ? regions : ["行政楼", "第一教学楼", "第2教学楼"];
-        // 列宽 / 节点间距需大于节点文案宽度，避免标签挤叠
-        const COL_W = 360;
-        const LEFT0 = 96;
+        const preferred = ["数据机房区", "行政楼", "第一教学楼", "第二教学楼"];
+        const found = Array.from(new Set(list.map((a) => a.region).filter(Boolean)));
+        const useRegions = preferred.filter((r) => found.includes(r)).concat(found.filter((r) => !preferred.includes(r)));
+        const regions = useRegions.length ? useRegions : preferred;
+        const COL_W = 280;
+        const LEFT0 = 88;
         const NODE_W = 108;
-        const NODE_GAP = 118;
-        const ROW_H = 132;
+        const NODE_GAP = 112;
+        const ROW_H = 148;
         const TOP0 = 78;
         const nodes = [];
 
@@ -216,7 +265,7 @@
           return start + index * NODE_GAP;
         }
 
-        useRegions.forEach((region, ri) => {
+        regions.forEach((region, ri) => {
           layers.forEach((layer, li) => {
             const bucket = list.filter((a) => a.region === region && a.layer === layer);
             const byDevice = {};
@@ -229,6 +278,8 @@
                   region,
                   layer,
                   probe: a.probe,
+                  ip: a.ip || "-",
+                  iconType: a.iconType || "switch",
                   count: 0,
                   worst: "提醒",
                   sample: a,
@@ -247,6 +298,8 @@
                 region,
                 layer,
                 probe: `${region}探针`,
+                ip: "-",
+                iconType: "switch",
                 count: 0,
                 worst: "正常",
                 empty: true,
@@ -264,7 +317,7 @@
             }
           });
         });
-        return { regions: useRegions, layers, nodes, COL_W, LEFT0, ROW_H, TOP0 };
+        return { regions, layers, nodes, COL_W, LEFT0, ROW_H, TOP0 };
       }
 
       function toneClass(worst) {
@@ -276,7 +329,7 @@
 
       function shortName(name) {
         const s = String(name || "");
-        return s.length > 10 ? `${s.slice(0, 9)}…` : s;
+        return s.length > 11 ? `${s.slice(0, 10)}…` : s;
       }
 
       function renderAlarmTopo() {
@@ -284,33 +337,38 @@
         const model = buildTopoModel(list);
         const canvas = document.getElementById("alarmTopoCanvas");
         const width = Math.max(980, model.LEFT0 + model.regions.length * model.COL_W + 40);
-        const height = model.TOP0 + model.layers.length * model.ROW_H + 36;
+        const height = model.TOP0 + model.layers.length * model.ROW_H + 48;
 
         const layerLines = model.layers.map((layer, li) => {
           const y = model.TOP0 + li * model.ROW_H;
           return `<div class="fault-topo-layer-label" style="top:${y - 8}px">${esc(layer)}</div>
-            <div class="fault-topo-layer-line" style="top:${y + 52}px"></div>`;
+            <div class="fault-topo-layer-line" style="top:${y + 56}px"></div>`;
         }).join("");
 
         const regionHeads = model.regions.map((region, ri) => {
           const probes = Array.from(new Set(list.filter((a) => a.region === region).map((a) => a.probe))).filter(Boolean);
           return `<div class="fault-topo-region" style="left:${model.LEFT0 + ri * model.COL_W}px;width:${model.COL_W - 24}px">
             <strong>${esc(region)}</strong>
-            <small><i class="fa-solid fa-satellite-dish"></i> ${esc(probes[0] || "分布式探针")}</small>
+            <small><i class="fa-solid fa-satellite-dish"></i> ${esc(probes[0] || "校区探针")}</small>
           </div>`;
         }).join("");
 
         const nodeHtml = model.nodes.map((n) => {
           const href = n.empty ? "#" : deviceDetailUrl(n.sample || {
-            id: n.id, deviceId: n.id, device: n.name, ip: "-", region: n.region, layer: n.layer, probe: n.probe, message: "",
+            id: n.id, deviceId: n.id, device: n.name, ip: n.ip || "-", region: n.region, layer: n.layer, probe: n.probe, message: "",
           });
+          const fault = n.worst === "告警" || n.worst === "预警";
+          const sub = n.ip && n.ip !== "-" ? n.ip : (n.layer || "-");
           return `<a class="fault-topo-node ${toneClass(n.worst)} ${n.empty ? "is-empty" : ""}"
               href="${n.empty ? "#" : esc(href)}"
               style="left:${n.x}px;top:${n.y}px"
               title="${esc(n.name)}｜${esc(n.region)}｜${esc(n.layer)}｜告警${n.count}">
-              <span class="icon"><i class="fa-solid fa-network-wired"></i></span>
+              <span class="icon">${deviceIconSvg(inferIconType(n), fault && !n.empty, n.id)}</span>
               ${n.count ? `<span class="badge">${n.count}</span>` : ""}
-              <span class="name">${esc(shortName(n.name))}</span>
+              <span class="label-wrap">
+                <span class="name">${esc(shortName(n.name))}</span>
+                <span class="sub">${esc(sub)}</span>
+              </span>
             </a>`;
         }).join("");
 
